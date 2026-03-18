@@ -239,7 +239,6 @@ def download_stack_v2() -> int:
         "bigcode/the-stack-v2-train-full-ids",
         split="train",
         streaming=True,
-        trust_remote_code=True,   # required by this dataset
     )
 
     def filter_fn(row: dict) -> bool:
