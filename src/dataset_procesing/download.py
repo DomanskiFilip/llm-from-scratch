@@ -7,9 +7,7 @@ from typing import Iterator
 from datasets import load_dataset, Dataset
 from tqdm import tqdm
 
-# ---------------------------------------------------------------------------
 # Configuration
-# ---------------------------------------------------------------------------
 
 OUTPUT_DIR = Path("data")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -74,9 +72,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 def normalise_licence(raw: str) -> str:
     """Lower-case and strip whitespace for consistent comparison."""
@@ -158,10 +154,7 @@ def stream_to_jsonl(
     return kept
 
 
-# ---------------------------------------------------------------------------
 # Dataset 1 — Alpaca Cleaned (instruction tuning)
-# ---------------------------------------------------------------------------
-
 def download_alpaca() -> int:
     """
     unsloth/alpaca-cleaned schema:
@@ -213,10 +206,7 @@ def download_alpaca() -> int:
     return len(records)
 
 
-# ---------------------------------------------------------------------------
 # Dataset 2 — The Stack v2 (code, licence-filtered)
-# ---------------------------------------------------------------------------
-
 def download_stack_v2() -> int:
     """
     bigcode/the-stack-v2-train-full-ids schema (relevant columns):
@@ -282,10 +272,7 @@ def download_stack_v2() -> int:
     return kept
 
 
-# ---------------------------------------------------------------------------
 # Summary / stats
-# ---------------------------------------------------------------------------
-
 def print_stats() -> None:
     log.info("=== Dataset Summary ===")
     for fname in ["alpaca_cleaned.jsonl", "stack_v2_filtered.jsonl"]:
@@ -309,9 +296,7 @@ def print_stats() -> None:
                 log.info("    %-20s %d", lang, cnt)
 
 
-# ---------------------------------------------------------------------------
 # Entry point
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     log.info("Starting dataset preparation...")
