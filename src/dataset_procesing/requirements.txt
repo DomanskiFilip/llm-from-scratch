@@ -1,0 +1,7 @@
+datasets
+numpy
+torch
+tqdm
+requests
+regex
+tokenizers
