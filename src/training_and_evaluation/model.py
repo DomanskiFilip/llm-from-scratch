@@ -5,7 +5,7 @@ WHAT THIS FILE DOES
 -------------------
 Defines the PyTorch neural network used for the coding LLM.
 The architecture is a multi-layer LSTM with:
-  - An embedding layer (optionally initialised from GloVe via 03_embeddings.py)
+  - An embedding layer (optionally initialised from GloVe via embeddings.py)
   - Stacked LSTM recurrent layers
   - Dropout regularisation between every major component
   - A linear projection head that maps hidden states → vocabulary logits
@@ -19,7 +19,7 @@ REQUIREMENT COVERAGE (Req 1.2.1)
   ✓ Recurrent layers (LSTM)
   ✓ Fully connected layers for prediction
   ✓ Dropout layers
-  ✓ Early stopping (implemented in 05_train.py, referenced here)
+  ✓ Early stopping (implemented in train.py, referenced here)
   ✓ Detailed explanations of every layer and its purpose
 
 WHY LSTM AND NOT A TRANSFORMER?
@@ -89,11 +89,11 @@ class LMConfig:
     All hyperparameters for the language model in one place.
 
     Keeping config separate from the model class makes hyperparameter
-    sweeps (05_train.py) clean: you create a new LMConfig, pass it to
+    sweeps (train.py) clean: you create a new LMConfig, pass it to
     CodingLM, and never touch the model code.
 
     Field descriptions:
-      vocab_size    Number of tokens in the BPE vocabulary (from 02_tokeniser.py).
+      vocab_size    Number of tokens in the BPE vocabulary (from tokeniser.py).
       embed_dim     Dimensionality of the token embedding vectors.
                     Should match GloVe dim (100) if using pre-trained embeddings,
                     or be a free hyperparameter if training from scratch.
@@ -327,7 +327,7 @@ class CodingLM(nn.Module):
             padding_idx=config.pad_id,
         )
         if pretrained_embeddings is not None:
-            # Load GloVe-aligned weights from 03_embeddings.py
+            # Load GloVe-aligned weights from embeddings.py
             assert pretrained_embeddings.shape == (config.vocab_size, config.embed_dim), (
                 f"Embedding shape mismatch: expected ({config.vocab_size}, {config.embed_dim}), "
                 f"got {tuple(pretrained_embeddings.shape)}"

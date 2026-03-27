@@ -4,7 +4,7 @@ evaluate.py — Evaluation, Metrics & Insights
 
 WHAT THIS FILE DOES
 -------------------
-1. Loads a trained checkpoint from 05_train.py
+1. Loads a trained checkpoint from train.py
 2. Computes:
      - Per-epoch loss curves (train + validation)  →  PNG plot
      - Perplexity (the standard LM metric)
@@ -80,8 +80,8 @@ from sklearn.metrics import (
 )
 from tqdm import tqdm
 
-from model import CodingLM, LMConfig      # 04_model.py
-from train import ShardDataset, get_device  # 05_train.py (ShardDataset, get_device)
+from model import CodingLM, LMConfig      # model.py
+from train import ShardDataset, get_device  # train.py (ShardDataset, get_device)
 
 # Paths
 DATA_DIR   = Path("data")
@@ -98,7 +98,7 @@ TOP_K_TOKENS = 50
 # Load checkpoint
 
 def load_checkpoint(ckpt_path: Path, device: torch.device):
-    """Load a checkpoint saved by 05_train.py and return (model, metadata)."""
+    """Load a checkpoint saved by train.py and return (model, metadata)."""
     ckpt = torch.load(ckpt_path, map_location=device)
 
     cfg_dict = ckpt["config"]
@@ -116,7 +116,7 @@ def load_checkpoint(ckpt_path: Path, device: torch.device):
 
 def plot_loss_curves(log_csv_path: Path, out_path: Path) -> None:
     """
-    Read the CSV log written by 05_train.py and plot train vs val loss
+    Read the CSV log written by train.py and plot train vs val loss
     per epoch.  Loss curves are the primary tool for diagnosing:
       - Underfitting: both curves high and flat  →  model too small / LR too low
       - Overfitting: train continues falling but val plateaus or rises
@@ -379,8 +379,8 @@ STRENGTHS
    close in embedding space from day one, so the model can exploit this
    structure immediately rather than learning it from scratch.
 
-4. The training pipeline separates tokenisation (02_tokeniser.py) from
-   training (05_train.py), so the tokeniser can be reused or replaced
+4. The training pipeline separates tokenisation (tokeniser.py) from
+   training (train.py), so the tokeniser can be reused or replaced
    independently of the model.
 
 LIMITATIONS
@@ -441,7 +441,7 @@ AREAS FOR IMPROVEMENT
 → UPGRADE PATH 3: Larger vocabulary (Qwen production size)
     Increasing vocab_size from 32,768 to 100k–150k tokens (matching Qwen)
     means longer token merges, shorter average sequence lengths, and less
-    memory pressure.  Requires re-running 02_tokeniser.py with a larger
+    memory pressure.  Requires re-running tokeniser.py with a larger
     VOCAB_SIZE and a bigger training corpus.
 
 → UPGRADE PATH 4: Rotary Positional Embeddings (RoPE)
@@ -549,7 +549,7 @@ def main() -> None:
     write_insights(metrics, str(ckpt_path), EVAL_DIR / "insights_report.txt")
 
     print(f"\nAll evaluation outputs saved to {EVAL_DIR}/")
-    print("Next step: run  07_generate.py --ckpt", args.ckpt)
+    print("Next step: run  generate.py --ckpt", args.ckpt)
 
 
 if __name__ == "__main__":

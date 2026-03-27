@@ -302,7 +302,7 @@ def main():
     log.info("Done! Total examples: alpaca=%d  stack=%d", alpaca_count, stack_count)
     print_stats()
     log.info(
-        "\nNext step: run  02_tokenise.py  to build the vocabulary and "
+        "\nNext step: run  tokenise.py  to build the vocabulary and "
         "tokenise both datasets into binary shards for training."
     )
 

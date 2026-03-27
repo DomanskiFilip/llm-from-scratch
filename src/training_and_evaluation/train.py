@@ -4,12 +4,12 @@ train.py — Training Loop, Hyperparameter Search & Early Stopping
 
 WHAT THIS FILE DOES
 -------------------
-1. Loads tokenised binary shards produced by 02_tokeniser.py
-2. Trains CodingLM (from 04_model.py) with AdamW + cosine LR schedule
+1. Loads tokenised binary shards produced by tokeniser.py
+2. Trains CodingLM (from model.py) with AdamW + cosine LR schedule
 3. Implements early stopping on validation loss
 4. Runs a grid search over learning rate, batch size, and dropout rate
 5. Logs training/validation loss per epoch to CSV files for plotting
-6. Saves the best checkpoint for use in 06_evaluate.py and 07_generate.py
+6. Saves the best checkpoint for use in evaluate.py and generate.py
 
 REQUIREMENT COVERAGE (Req 1.2.2)
 ---------------------------------
@@ -83,7 +83,7 @@ import torch.nn as nn
 from torch.optim.lr_scheduler import LambdaLR
 from tqdm import tqdm
 
-from model import CodingLM, LMConfig   # 04_model.py
+from model import CodingLM, LMConfig   # model.py
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -174,7 +174,7 @@ def get_device(preference: str = "auto") -> torch.device:
 # ---------------------------------------------------------------------------
 # Binary shard DataLoader
 # ---------------------------------------------------------------------------
-# The shards produced by 02_tokeniser.py are flat arrays of uint16 token IDs.
+# The shards produced by tokeniser.py are flat arrays of uint16 token IDs.
 # We read them into numpy arrays and slice out [seq_len+1]-length windows.
 # The +1 is because for a context [x₀, x₁, …, x_{T-1}] the target is
 # [x₁, x₂, …, x_T] — each target is the next token.
@@ -221,7 +221,7 @@ def build_dataloaders(cfg: TrainConfig, device_type: str):
     shards = sorted(DATA_DIR.glob("*_shard_*.bin"))
     if not shards:
         raise FileNotFoundError(
-            f"No shard files found in {DATA_DIR}.  Run 02_tokeniser.py first."
+            f"No shard files found in {DATA_DIR}.  Run tokeniser.py first."
         )
     n_val = max(1, int(len(shards) * cfg.val_fraction))
     val_shards   = shards[:n_val]
@@ -596,7 +596,7 @@ def main() -> None:
     print(f"  Best val loss : {result['best_val_loss']:.4f}")
     print(f"  Perplexity    : {math.exp(min(result['best_val_loss'], 20)):.1f}")
     print(f"  Checkpoint    : {result['ckpt_path']}")
-    print(f"\nNext step: run  06_evaluate.py --ckpt {result['ckpt_path']}")
+    print(f"\nNext step: run  evaluate.py --ckpt {result['ckpt_path']}")
 
 
 if __name__ == "__main__":

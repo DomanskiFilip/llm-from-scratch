@@ -55,8 +55,8 @@ from model import CodingLM, LMConfig
 import torch
 import torch.nn.functional as F
 
-from model import CodingLM, LMConfig    # 04_model.py
-from train import get_device            # 05_train.py
+from model import CodingLM, LMConfig    # model.py
+from train import get_device            # train.py
 
 TOKENISER_JSON = Path("tokeniser") / "qwen_style.json"
 
