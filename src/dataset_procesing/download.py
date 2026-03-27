@@ -294,18 +294,17 @@ def print_stats() -> None:
 
 
 # Entry point
-
-if __name__ == "__main__":
+def main():
     log.info("Starting dataset preparation...")
     log.info("Output directory: %s", OUTPUT_DIR.resolve())
-
     alpaca_count = download_alpaca()
     stack_count  = download_stack_v2()
-
     log.info("Done! Total examples: alpaca=%d  stack=%d", alpaca_count, stack_count)
     print_stats()
-
     log.info(
         "\nNext step: run  02_tokenise.py  to build the vocabulary and "
         "tokenise both datasets into binary shards for training."
     )
+
+if __name__ == "__main__":
+    main()
