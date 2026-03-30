@@ -52,7 +52,7 @@ Key design decisions taken from that paper / the Qwen codebase:
       Qwen deliberately avoids a single bos/eos token.  Document boundaries
       are marked by <|endoftext|> (ID = VOCAB_SIZE − 1 in our scheme).
       Source: Bai et al. 2023 §2.1; QwenLM/Qwen tokenization_note.md.
-      
+
 Usage
 -----
   python tokeniser.py            # train + encode
@@ -81,69 +81,28 @@ from tokenizers import (
 from tokenizers.pre_tokenizers import ByteLevel, Sequence, Split
 from tqdm import tqdm
 
-# ---------------------------------------------------------------------------
+
 # Paths
-# ---------------------------------------------------------------------------
+
 DATA_DIR = Path("data")
 MODEL_DIR = Path("tokeniser")
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
-ALPACA_JSONL = DATA_DIR / "alpaca_cleaned.jsonl"
-STACK_JSONL = DATA_DIR / "stack_v2_filtered.jsonl"
-TOKENISER_JSON = MODEL_DIR / "qwen_style.json"  # HuggingFace tokenizers format
-VOCAB_TXT = MODEL_DIR / "vocab.txt"  # human-readable vocab
+ALPACA_JSONL    = DATA_DIR / "alpaca_cleaned.jsonl"
+STACK_JSONL     = DATA_DIR / "stack_v2_filtered.jsonl"
+TOKENISER_JSON  = MODEL_DIR / "qwen_style.json"
+VOCAB_TXT       = MODEL_DIR / "vocab.txt"
 
-# ---------------------------------------------------------------------------
+
 # Hyperparameters
-# ---------------------------------------------------------------------------
 
-# [QWEN-3] Qwen uses 151,643 regular tokens.  We use 32,768 — a power of two,
-# which keeps embedding matrix dimensions GPU-friendly.
-VOCAB_SIZE = 32_768
 
-# Number of lines sampled from each dataset to *train* the tokeniser.
-# The actual model data will be encoded in full afterwards.
-TRAIN_SAMPLE_LINES = 200_000  # lines from each source
+VOCAB_SIZE         = 32_768
+TRAIN_SAMPLE_LINES = 200_000
+TOKENS_PER_SHARD   = 10_000_000
 
-# Shard size: how many tokens per .bin file written to disk.
-TOKENS_PER_SHARD = 10_000_000
 
-# ---------------------------------------------------------------------------
 # [QWEN-2] Pre-tokenisation regex — identical to GPT-4's cl100k_base
-# ---------------------------------------------------------------------------
-# This regex splits text into "pre-tokens" before BPE runs.
-# BPE merge rules are only applied within a pre-token, never across boundaries.
-#
-# Why this matters for code:
-#   Without a regex, BPE would happily learn merges like ")\n    def" (closing
-#   paren, newline, indent, keyword) — a useless multi-category token.  The
-#   regex prevents that by ensuring punctuation, letters, numbers, and
-#   whitespace always start separate pre-tokens.
-#
-# Breakdown of each alternative (| branch) in the pattern:
-#   (?i:'s|'t|'re|'ve|'m|'ll|'d)
-#       English contractions (case-insensitive): don't, I've, she'll …
-#   [^\r\n\p{L}\p{N}]?\p{L}+
-#       Optional leading symbol/punct, then a run of Unicode letters.
-#       The optional prefix handles "(" before "while", "'(" before "re", etc.
-#   \p{N}{1,3}
-#       Up to 3 digits together.  Splitting long numbers into ≤3-digit chunks
-#       keeps the vocabulary from wasting slots on every 7-digit integer.
-#       [QWEN-2 detail] Qwen caps at {1,3}, same as cl100k_base.
-#   [ ]?[^\s\p{L}\p{N}]+[\r\n]*
-#       Optional space, then a run of punctuation/symbols, optional newlines.
-#       Covers things like "::", "->", "//", "/*", etc. in code.
-#   \s*[\r\n]+
-#       Newlines (with optional preceding spaces).  Gives newlines their own
-#       token slot so the model learns code indentation structure.
-#   \s+(?!\S)
-#       A run of spaces NOT followed by a non-space (i.e. trailing whitespace).
-#   \s+
-#       Any remaining whitespace.
-#
-# Source: tiktoken openai_public.py cl100k_base definition;
-#         Bai et al. 2023 §2.1 ("same tokeniser as cl100k_base").
-
 QWEN_REGEX_PATTERN = (
     r"(?i:'s|'t|'re|'ve|'m|'ll|'d)"
     r"|[^\r\n\p{L}\p{N}]?\p{L}+"
@@ -154,25 +113,10 @@ QWEN_REGEX_PATTERN = (
     r"|\s+"
 )
 
-# Compile once for use in the streaming cleaner
 _PAT = regex.compile(QWEN_REGEX_PATTERN)
 
 
-# ---------------------------------------------------------------------------
 # [QWEN-4] Special tokens (ChatML set)
-# ---------------------------------------------------------------------------
-# <|endoftext|>  — separates documents in the pre-training stream
-# <|im_start|>   — opens a ChatML turn  (role follows on the same line)
-# <|im_end|>     — closes a ChatML turn
-# <|fim_prefix|> — fill-in-the-middle prefix marker (code completion tasks)
-# <|fim_suffix|> — fill-in-the-middle suffix marker
-# <|fim_middle|> — fill-in-the-middle middle marker
-# <|pad|>        — padding token (not meaningful to the model)
-#
-# IDs are assigned at the END of the vocabulary so that regular BPE tokens
-# occupy IDs 0…(VOCAB_SIZE - N_SPECIAL - 1).  This mirrors Qwen's layout
-# where all 208 control tokens sit above the 151,643 regular tokens.
-# Source: Bai et al. 2023 §2.1; QwenLM/Qwen tokenization_note.md.
 
 SPECIAL_TOKENS = [
     "<|endoftext|>",
@@ -187,46 +131,28 @@ SPECIAL_TOKENS = [
 EOT_TOKEN = "<|endoftext|>"
 
 
-# ---------------------------------------------------------------------------
+
 # Text cleaning
-# ---------------------------------------------------------------------------
-
-
 def clean_text(text: str) -> str:
     """
     Lightweight text normalisation.
 
     Steps (in order):
-      1. Unicode NFC normalisation — ensures multi-codepoint characters like
-         é (e + combining acute) are stored as a single codepoint.  Prevents
-         the same visual character producing different byte sequences.
-      2. Remove null bytes — they cause issues in file I/O and some tokenisers.
-      3. Strip ANSI escape codes — common in terminal-captured code snippets.
-      4. Collapse runs of more than 3 blank lines into 3.  Code legitimately
-         uses blank lines for section separation, but 20 blank lines in a row
-         is almost always scraper noise.
-      5. Strip leading/trailing whitespace.
-
-    We intentionally do NOT:
-      - Lower-case (code is case-sensitive)
-      - Remove stopwords (meaningless for a generation model)
-      - Lemmatise (same reason)
+      1. Unicode NFC normalisation
+      2. Remove null bytes
+      3. Strip ANSI escape codes
+      4. Collapse runs of more than 3 blank lines into 3
+      5. Strip leading/trailing whitespace
     """
-    # 1. NFC normalisation
     text = unicodedata.normalize("NFC", text)
-    # 2. Null bytes
     text = text.replace("\x00", "")
-    # 3. ANSI escape sequences  (e.g. \x1b[32m from coloured terminal output)
     text = re.sub(r"\x1b\[[0-9;]*[mGKHF]", "", text)
-    # 4. Collapse excessive blank lines
     text = re.sub(r"\n{4,}", "\n\n\n", text)
-    # 5. Strip
     return text.strip()
 
 
-# ---------------------------------------------------------------------------
+
 # Dataset streaming helpers
-# ---------------------------------------------------------------------------
 
 
 def iter_texts(
@@ -247,67 +173,41 @@ def iter_texts(
 
 def interleaved_texts(sample: int = TRAIN_SAMPLE_LINES) -> Generator[str, None, None]:
     """
-    Interleave lines from both datasets for balanced BPE training.
+    Yield texts for BPE training from all available datasets.
 
-    Why balance?  BPE greedily learns the most frequent byte pairs.  If we
-    feed it only code, it will over-specialise on Python/JS syntax and produce
-    poor tokens for natural-language instruction text.  Interleaving ensures
-    the vocabulary covers both domains.
+    Stack is optional — if stack_v2_filtered.jsonl is absent, training
+    proceeds on Alpaca alone, producing a conversational-only tokeniser.
+    Both datasets are interleaved when both are present so the vocabulary
+    covers natural language and code equally.
     """
-    alpaca_iter = iter_texts(ALPACA_JSONL, max_lines=sample)
-    stack_iter = iter_texts(STACK_JSONL, max_lines=sample)
-    for a, s in zip(alpaca_iter, stack_iter):
-        yield a
-        yield s
-    # drain whichever iterator still has items
-    for t in alpaca_iter:
-        yield t
-    for t in stack_iter:
-        yield t
+    stack_available = STACK_JSONL.exists()
+
+    if stack_available:
+        alpaca_iter = iter_texts(ALPACA_JSONL, max_lines=sample)
+        stack_iter  = iter_texts(STACK_JSONL,  max_lines=sample)
+        for a, s in zip(alpaca_iter, stack_iter):
+            yield a
+            yield s
+        for t in alpaca_iter:
+            yield t
+        for t in stack_iter:
+            yield t
+    else:
+        print(
+            "  [INFO] stack_v2_filtered.jsonl not found — "
+            "training tokeniser on Alpaca only."
+        )
+        yield from iter_texts(ALPACA_JSONL, max_lines=sample)
 
 
-# ---------------------------------------------------------------------------
-# Tokeniser construction (HuggingFace `tokenizers` library)
-# ---------------------------------------------------------------------------
 
-
+# Tokeniser construction
 def build_tokeniser() -> Tokenizer:
     """
     Construct and train a Byte-level BPE tokeniser in the Qwen style.
-
-    Architecture choices explained inline with [QWEN-N] markers.
-
-    Returns a fully trained HuggingFace Tokenizer object.
     """
-
-    # ------------------------------------------------------------------
-    # 1. Model — BPE on byte-level tokens
-    # ------------------------------------------------------------------
-    # [QWEN-1] We use `models.BPE` with `byte_fallback=True`.
-    #
-    # byte_fallback=True means: if a sub-word cannot be decoded as valid
-    # UTF-8, fall back to individual <0xNN> byte tokens instead of <unk>.
-    # This matches Qwen's "no unknown token" guarantee.
-    #
-    # unk_token=None: there is no UNK because every byte is in the vocab.
     tokeniser = Tokenizer(models.BPE(byte_fallback=True, unk_token=None))
 
-    # ------------------------------------------------------------------
-    # 2. Pre-tokeniser — regex split then ByteLevel encoding
-    # ------------------------------------------------------------------
-    # [QWEN-2] Two-stage pre-tokenisation (same as tiktoken cl100k_base):
-    #
-    # Stage A — Split on the Qwen/GPT-4 regex.
-    #   behavior="isolated" keeps the matched chunk as a single pre-token
-    #   and does NOT merge the surrounding context into it.
-    #
-    # Stage B — ByteLevel.
-    #   Maps every byte of each pre-token to a printable "alias" character
-    #   from a 256-character alphabet (the Radford et al. GPT-2 mapping).
-    #   This is what makes the tokeniser truly byte-level: the BPE algorithm
-    #   sees printable strings and can learn merges, but the underlying unit
-    #   is always a single byte.  add_prefix_space=False because the regex
-    #   already handles leading spaces.
     tokeniser.pre_tokenizer = Sequence(
         [
             Split(
@@ -319,33 +219,7 @@ def build_tokeniser() -> Tokenizer:
         ]
     )
 
-    # ------------------------------------------------------------------
-    # 3. Decoder — ByteLevel
-    # ------------------------------------------------------------------
-    # Reverses the ByteLevel encoding during decode().
     tokeniser.decoder = decoders.ByteLevel(add_prefix_space=False)
-
-    # ------------------------------------------------------------------
-    # 4. Post-processor — no BOS/EOS injected automatically
-    # ------------------------------------------------------------------
-    # [QWEN-5] Qwen does not inject BOS/EOS tokens automatically at the
-    # tokeniser level.  Document boundaries are handled at the data
-    # collation stage by inserting <|endoftext|> between documents.
-    # We follow that convention: do nothing here.
-
-    # ------------------------------------------------------------------
-    # 5. Trainer
-    # ------------------------------------------------------------------
-    # vocab_size: [QWEN-3] 32,768 for our small-scale experiment.
-    # min_frequency: pairs that appear fewer than 2 times are not merged.
-    # special_tokens: [QWEN-4] the ChatML set.  They are added *after* BPE
-    #   training so they don't interfere with the frequency counts.
-    # initial_alphabet: start from the full 256-byte alphabet so that no
-    #   input can ever produce <unk>.
-
-    added_tokens = [
-        AddedToken(tok, special=True, normalized=False) for tok in SPECIAL_TOKENS
-    ]
 
     trainer = trainers.BpeTrainer(
         vocab_size=VOCAB_SIZE,
@@ -355,13 +229,9 @@ def build_tokeniser() -> Tokenizer:
         show_progress=True,
     )
 
-    # ------------------------------------------------------------------
-    # 6. Train
-    # ------------------------------------------------------------------
     print(f"\nTraining BPE tokeniser (vocab_size={VOCAB_SIZE}) …")
     print(f"  Sampling up to {TRAIN_SAMPLE_LINES:,} lines from each dataset.")
 
-    # The HuggingFace trainer accepts an iterator of strings.
     tokeniser.train_from_iterator(
         interleaved_texts(sample=TRAIN_SAMPLE_LINES),
         trainer=trainer,
@@ -371,20 +241,10 @@ def build_tokeniser() -> Tokenizer:
     return tokeniser
 
 
-# ---------------------------------------------------------------------------
+
 # Encoding helpers
-# ---------------------------------------------------------------------------
-
-
 def encode_with_eot(tokeniser: Tokenizer, text: str) -> list[int]:
-    """
-    Encode a single document and append the <|endoftext|> boundary token.
-
-    [QWEN-4 / QWEN-5] In Qwen's pre-training, multiple documents are packed
-    into a single sequence separated by <|endoftext|>.  Appending the marker
-    here means the DataLoader can concatenate encoded documents without any
-    extra logic.
-    """
+    """Encode a single document and append the <|endoftext|> boundary token."""
     ids = tokeniser.encode(text).ids
     eot_id = tokeniser.token_to_id(EOT_TOKEN)
     ids.append(eot_id)
@@ -392,16 +252,7 @@ def encode_with_eot(tokeniser: Tokenizer, text: str) -> list[int]:
 
 
 def write_shard(ids: list[int], path: Path) -> None:
-    """
-    Write a flat list of uint16 token IDs to a binary file.
-
-    uint16 supports vocab sizes up to 65,535 — plenty for VOCAB_SIZE=32,768.
-    Using a raw binary format (not numpy, not pickle) keeps the file minimal
-    and readable by any language.
-
-    File format: N × 2 bytes, little-endian uint16, no header.
-    To read back:  ids = list(struct.unpack('<' + 'H'*N, data))
-    """
+    """Write a flat list of uint16 token IDs to a binary file."""
     with open(path, "wb") as f:
         for chunk_start in range(0, len(ids), 65536):
             chunk = ids[chunk_start : chunk_start + 65536]
@@ -416,14 +267,15 @@ def encode_dataset(
 ) -> None:
     """
     Encode every document in a .jsonl file and write binary shards.
-
-    Shards are named  <out_prefix>_shard_0000.bin, _0001.bin, etc.
-    The last shard may be smaller than shard_size.
+    Skips gracefully if the file does not exist.
     """
+    if not jsonl_path.exists():
+        print(f"  [SKIP] {jsonl_path} not found — skipping encoding for '{out_prefix}'.")
+        return
+
     shard_idx = 0
     buf: list[int] = []
     total = 0
-
     shard_path = DATA_DIR / f"{out_prefix}_shard_{shard_idx:04d}.bin"
 
     with tqdm(desc=f"Encoding {jsonl_path.name}", unit=" docs") as pbar:
@@ -448,11 +300,7 @@ def encode_dataset(
     print(f"  Total tokens ({out_prefix}): {total / 1e6:.2f}M")
 
 
-# ---------------------------------------------------------------------------
 # Human-readable vocab dump
-# ---------------------------------------------------------------------------
-
-
 def save_vocab_txt(tokeniser: Tokenizer) -> None:
     """Write vocab.txt: one 'token_id  display_repr' line per token."""
     vocab = tokeniser.get_vocab()
@@ -462,11 +310,8 @@ def save_vocab_txt(tokeniser: Tokenizer) -> None:
     print(f"  Vocab saved to {VOCAB_TXT}")
 
 
-# ---------------------------------------------------------------------------
+
 # Entry point
-# ---------------------------------------------------------------------------
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Train and/or run Qwen-style BPE tokeniser"
@@ -489,7 +334,7 @@ def main() -> None:
 
     print("\nEncoding datasets into binary shards …")
     encode_dataset(tokeniser, ALPACA_JSONL, "alpaca")
-    encode_dataset(tokeniser, STACK_JSONL, "stack")
+    encode_dataset(tokeniser, STACK_JSONL,  "stack")   # skipped if missing
 
     print("\nDone!  Shards are in data/")
     print(
