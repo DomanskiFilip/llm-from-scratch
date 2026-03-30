@@ -403,7 +403,7 @@ def main() -> None:
         words = [tokeniser.id_to_token(i) for i in top5_ids if i != probe_id][:5]
         print(f"  '{probe}' → {words}")
 
-    print("\nDone!  Next step: run  04_model.py  to define the LSTM model.")
+    print("\nDone!  Next step: run  model.py  to define the LSTM model.")
 
 
 if __name__ == "__main__":
