@@ -116,9 +116,8 @@ import requests
 from tokenizers import Tokenizer
 from tqdm import tqdm
 
-# ---------------------------------------------------------------------------
+
 # Paths
-# ---------------------------------------------------------------------------
 DATA_DIR      = Path("data")
 MODEL_DIR     = Path("tokeniser")
 EMBED_DIR     = Path("embeddings")
@@ -130,19 +129,15 @@ GLOVE_TXT      = EMBED_DIR / "glove.6B.100d.txt"
 GLOVE_ALIGNED  = EMBED_DIR / "glove_aligned.pt"    # final weight matrix
 COVERAGE_LOG   = EMBED_DIR / "alignment_coverage.txt"
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
 
+# Configuration
 GLOVE_URL  = "https://nlp.stanford.edu/data/glove.6B.zip"   # 822 MB zip
 EMBED_DIM  = 100    # GloVe-100d — change to 200/300 if you download those
 RANDOM_SEED = 42
 
 
-# ---------------------------------------------------------------------------
-# Download helpers
-# ---------------------------------------------------------------------------
 
+# Download helpers
 def download_file(url: str, dest: Path, chunk_size: int = 1 << 20) -> None:
     """Stream-download a file, showing a tqdm progress bar."""
     if dest.exists():
@@ -169,9 +164,9 @@ def extract_glove(zip_path: Path, txt_path: Path) -> None:
             dst.write(src.read())
 
 
-# ---------------------------------------------------------------------------
+
 # Load GloVe vectors into a dict
-# ---------------------------------------------------------------------------
+
 
 def load_glove(txt_path: Path) -> Dict[str, np.ndarray]:
     """
@@ -198,9 +193,9 @@ def load_glove(txt_path: Path) -> Dict[str, np.ndarray]:
     return glove
 
 
-# ---------------------------------------------------------------------------
+
 # Byte-level prefix decoder
-# ---------------------------------------------------------------------------
+
 # The HuggingFace ByteLevel pre-tokeniser maps each raw byte to a printable
 # character using the Radford et al. (2019) GPT-2 mapping.  Tokens in our
 # vocabulary look like "Ġdef" or "Ġreturn" where Ġ = U+0120 represents a
@@ -242,10 +237,8 @@ def bpe_token_to_text(token: str) -> str:
         return ""
 
 
-# ---------------------------------------------------------------------------
-# Alignment: BPE vocab → GloVe vectors
-# ---------------------------------------------------------------------------
 
+# Alignment: BPE vocab → GloVe vectors
 def align_to_bpe(
     tokeniser: Tokenizer,
     glove: Dict[str, np.ndarray],
@@ -322,20 +315,20 @@ def align_to_bpe(
     return weight, stats
 
 
-# ---------------------------------------------------------------------------
+
 # Main
-# ---------------------------------------------------------------------------
+
 
 def main() -> None:
 
-    # 1. Download & extract GloVe ----------------------------------------
+    # 1. Download & extract GloVe 
     download_file(GLOVE_URL, GLOVE_ZIP)
     extract_glove(GLOVE_ZIP, GLOVE_TXT)
 
-    # 2. Load GloVe ----------------------------------------------------------
+    # 2. Load GloVe
     glove = load_glove(GLOVE_TXT)
 
-    # 3. Load our BPE tokeniser ---------------------------------------------
+    # 3. Load our BPE tokeniser
     if not TOKENISER_JSON.exists():
         raise FileNotFoundError(
             f"{TOKENISER_JSON} not found.  Run 02_tokeniser.py first."
@@ -343,16 +336,16 @@ def main() -> None:
     print(f"  Loading tokeniser from {TOKENISER_JSON} …")
     tokeniser = Tokenizer.from_file(str(TOKENISER_JSON))
 
-    # 4. Align --------------------------------------------------------------
+    # 4. Align
     print("\nAligning BPE vocabulary to GloVe vectors …")
     weight, stats = align_to_bpe(tokeniser, glove, EMBED_DIM)
 
-    # 5. Save ---------------------------------------------------------------
+    # 5. Save
     torch.save(torch.from_numpy(weight), GLOVE_ALIGNED)
     print(f"\n  Saved aligned weight matrix → {GLOVE_ALIGNED}")
     print(f"  Shape: {weight.shape}  dtype: {weight.dtype}")
 
-    # 6. Coverage report ----------------------------------------------------
+    # 6. Coverage report
     vocab_size = tokeniser.get_vocab_size()
     total_regular = vocab_size - stats["special"]
     covered = stats["exact"] + stats["lower"] + stats["subword_avg"]
@@ -393,7 +386,7 @@ def main() -> None:
         f.write(report)
     print(f"  Report saved → {COVERAGE_LOG}")
 
-    # 7. Quick sanity check ------------------------------------------------
+    # 7. Quick sanity check
     print("\nSanity check — nearest GloVe neighbours for 'def' and 'return':")
     for probe in ["def", "return", "class"]:
         probe_id = tokeniser.token_to_id("Ġ" + probe)  # Ġ = space prefix

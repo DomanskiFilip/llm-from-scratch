@@ -89,7 +89,7 @@ MODEL_DIR = Path("tokeniser")
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 ALPACA_JSONL    = DATA_DIR / "alpaca_cleaned.jsonl"
-STACK_JSONL     = DATA_DIR / "stack_v2_filtered.jsonl"
+PYTHON_CODE_JSONL = DATA_DIR / "python_code_instructions.jsonl"
 TOKENISER_JSON  = MODEL_DIR / "qwen_style.json"
 VOCAB_TXT       = MODEL_DIR / "vocab.txt"
 
@@ -175,26 +175,26 @@ def interleaved_texts(sample: int = TRAIN_SAMPLE_LINES) -> Generator[str, None, 
     """
     Yield texts for BPE training from all available datasets.
 
-    Stack is optional — if stack_v2_filtered.jsonl is absent, training
+    The code instructions dataset is optional — if python_code_instructions.jsonl is absent, training
     proceeds on Alpaca alone, producing a conversational-only tokeniser.
     Both datasets are interleaved when both are present so the vocabulary
     covers natural language and code equally.
     """
-    stack_available = STACK_JSONL.exists()
+    code_available = PYTHON_CODE_JSONL.exists()
 
-    if stack_available:
+    if code_available:
         alpaca_iter = iter_texts(ALPACA_JSONL, max_lines=sample)
-        stack_iter  = iter_texts(STACK_JSONL,  max_lines=sample)
-        for a, s in zip(alpaca_iter, stack_iter):
+        code_iter  = iter_texts(PYTHON_CODE_JSONL,  max_lines=sample)
+        for a, c in zip(alpaca_iter, code_iter):
             yield a
-            yield s
+            yield c
         for t in alpaca_iter:
             yield t
-        for t in stack_iter:
+        for t in code_iter:
             yield t
     else:
         print(
-            "  [INFO] stack_v2_filtered.jsonl not found — "
+            "  [INFO] python_code_instructions.jsonl not found — "
             "training tokeniser on Alpaca only."
         )
         yield from iter_texts(ALPACA_JSONL, max_lines=sample)
@@ -334,7 +334,7 @@ def main() -> None:
 
     print("\nEncoding datasets into binary shards …")
     encode_dataset(tokeniser, ALPACA_JSONL, "alpaca")
-    encode_dataset(tokeniser, STACK_JSONL,  "stack")   # skipped if missing
+    encode_dataset(tokeniser, PYTHON_CODE_JSONL,  "python_code_instructions")   # skipped if missing
 
     print("\nDone!  Shards are in data/")
     print(

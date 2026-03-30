@@ -318,9 +318,8 @@ class CodingLM(nn.Module):
         super().__init__()
         self.config = config
 
-        # ------------------------------------------------------------------
+        
         # 1. Token embedding
-        # ------------------------------------------------------------------
         self.tok_embed = nn.Embedding(
             num_embeddings=config.vocab_size,
             embedding_dim=config.embed_dim,
@@ -335,19 +334,15 @@ class CodingLM(nn.Module):
             self.tok_embed.weight.data.copy_(pretrained_embeddings)
             print("[CodingLM] Loaded pre-trained GloVe embeddings.")
 
-        # ------------------------------------------------------------------
         # 2. Positional embedding
-        # ------------------------------------------------------------------
         self.pos_embed = PositionalEmbedding(config.max_seq_len, config.embed_dim)
 
-        # ------------------------------------------------------------------
+        
         # 3. Embedding dropout
-        # ------------------------------------------------------------------
         self.embed_drop = nn.Dropout(config.embed_drop)
 
-        # ------------------------------------------------------------------
+        
         # 4. Stacked LSTM
-        # ------------------------------------------------------------------
         # When n_layers > 1 and dropout > 0, PyTorch automatically applies
         # dropout between each pair of LSTM layers (but NOT after the last
         # layer — that is handled by out_drop below).
@@ -359,26 +354,26 @@ class CodingLM(nn.Module):
             dropout=config.lstm_drop if config.n_layers > 1 else 0.0,
         )
 
-        # ------------------------------------------------------------------
+        
         # 5. Output dropout
-        # ------------------------------------------------------------------
+        
         self.out_drop = nn.Dropout(config.out_drop)
 
-        # ------------------------------------------------------------------
+        
         # 6. Layer normalisation
-        # ------------------------------------------------------------------
+        
         self.layer_norm = nn.LayerNorm(config.hidden_dim)
 
-        # ------------------------------------------------------------------
+        
         # 7. Linear projection head
-        # ------------------------------------------------------------------
+        
         # bias=False is conventional for output projection heads in LLMs —
         # the bias adds little capacity but wastes memory.
         self.head = nn.Linear(config.hidden_dim, config.vocab_size, bias=False)
 
-        # ------------------------------------------------------------------
+        
         # Weight tying (Press & Wolf 2017)
-        # ------------------------------------------------------------------
+        
         # This only works when embed_dim == hidden_dim.
         # If they differ, we skip tying and treat both as independent matrices.
         if config.tie_weights and config.embed_dim == config.hidden_dim:
@@ -389,9 +384,9 @@ class CodingLM(nn.Module):
                 f"≠ hidden_dim ({config.hidden_dim}). Weight tying skipped."
             )
 
-        # ------------------------------------------------------------------
+        
         # Parameter initialisation
-        # ------------------------------------------------------------------
+        
         self._init_weights()
 
     def _init_weights(self) -> None:
@@ -428,9 +423,9 @@ class CodingLM(nn.Module):
         if not (self.config.tie_weights and self.config.embed_dim == self.config.hidden_dim):
             nn.init.normal_(self.head.weight, mean=0.0, std=0.02)
 
-    # ------------------------------------------------------------------
+    
     # Hidden state management
-    # ------------------------------------------------------------------
+    
 
     def init_hidden(self, batch_size: int, device: torch.device) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -461,9 +456,9 @@ class CodingLM(nn.Module):
         h, c = hidden
         return h.detach(), c.detach()
 
-    # ------------------------------------------------------------------
+    
     # Forward pass
-    # ------------------------------------------------------------------
+    
 
     def forward(
         self,
@@ -505,9 +500,9 @@ class CodingLM(nn.Module):
 
         return logits, hidden
 
-    # ------------------------------------------------------------------
+    
     # Inference helper
-    # ------------------------------------------------------------------
+    
 
     @torch.no_grad()
     def generate(
@@ -560,9 +555,9 @@ class CodingLM(nn.Module):
 
         return ids
 
-    # ------------------------------------------------------------------
+    
     # Utility
-    # ------------------------------------------------------------------
+    
 
     def count_parameters(self) -> int:
         """Return the total number of trainable parameters."""
