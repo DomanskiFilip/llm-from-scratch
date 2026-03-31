@@ -338,7 +338,7 @@ def main() -> None:
 
     print("\nDone!  Shards are in data/")
     print(
-        "Next step: run  03_embeddings.py  to build GloVe-initialised weight matrices."
+        "Next step: run  embeddings.py  to build GloVe-initialised weight matrices."
     )
 
 

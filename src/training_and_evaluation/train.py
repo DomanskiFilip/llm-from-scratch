@@ -217,21 +217,38 @@ class ShardDataset(torch.utils.data.Dataset):
 def build_dataloaders(cfg: TrainConfig, device_type: str):
     """
     Find all shards, split into train/val, return DataLoaders.
+    Handles the case where only one shard is present.
     """
     shards = sorted(DATA_DIR.glob("*_shard_*.bin"))
     if not shards:
         raise FileNotFoundError(
-            f"No shard files found in {DATA_DIR}.  Run tokeniser.py first."
+            f"No shard files found in {DATA_DIR}. Run tokeniser.py first."
         )
-    n_val = max(1, int(len(shards) * cfg.val_fraction))
-    val_shards   = shards[:n_val]
-    train_shards = shards[n_val:]
-
-    print(f"  Shards: {len(train_shards)} train, {len(val_shards)} val")
 
     pin = device_type == "cuda"
-    train_ds = ShardDataset(train_shards, cfg.seq_len)
-    val_ds   = ShardDataset(val_shards,   cfg.seq_len)
+
+    #  Multiple Shards
+    if len(shards) > 1:
+        n_val = max(1, int(len(shards) * cfg.val_fraction))
+        val_shards   = shards[:n_val]
+        train_shards = shards[n_val:]
+        
+        print(f"  Shards: {len(train_shards)} train, {len(val_shards)} val")
+        train_ds = ShardDataset(train_shards, cfg.seq_len)
+        val_ds   = ShardDataset(val_shards,   cfg.seq_len)
+
+    # CASE B: Single Shard
+    else:
+        print(f"  Single shard detected. Splitting data within the shard.")
+        full_ds = ShardDataset(shards, cfg.seq_len)
+        
+        # Split the single dataset into 95% train / 5% val (or based on val_fraction)
+        val_size = max(1, int(len(full_ds) * cfg.val_fraction))
+        train_size = len(full_ds) - val_size
+        
+        train_ds, val_ds = torch.utils.data.random_split(
+            full_ds, [train_size, val_size]
+        )
 
     train_loader = torch.utils.data.DataLoader(
         train_ds, batch_size=cfg.batch_size, shuffle=True,
