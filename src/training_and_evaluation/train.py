@@ -61,6 +61,7 @@ CROSS-ENTROPY LOSS
 """
 
 import argparse
+import sys
 import csv
 import json
 import math
@@ -75,6 +76,7 @@ import torch
 import torch.nn as nn
 from torch.optim.lr_scheduler import LambdaLR
 from tqdm import tqdm
+
 
 sys.path.append(str(Path(__file__).parent))
 
@@ -313,22 +315,10 @@ def run_training(
     max_epochs: Optional[int] = None,
     use_glove: bool = True,
 ) -> dict:
-    """
-    Train the model with settings from `cfg`.
-
-    Returns a dict with:
-        best_val_loss   float
-        train_losses    list of per-epoch average train losses
-        val_losses      list of per-epoch val losses
-        epochs_run      int
-        ckpt_path       Path to saved best checkpoint
-    """
     device = get_device(cfg.device)
     print(f"\n{'=' * 60}")
     print(f"Run: {run_name}")
-    print(
-        f"  device={device}  lr={cfg.lr}  batch={cfg.batch_size}  dropout={cfg.dropout_rate}"
-    )
+    print(f"  device={device}  lr={cfg.lr}  batch={cfg.batch_size}  dropout={cfg.dropout_rate}")
     print(f"{'=' * 60}")
 
     epochs = max_epochs if max_epochs is not None else cfg.epochs
@@ -343,7 +333,7 @@ def run_training(
         lstm_drop=cfg.dropout_rate,
         out_drop=cfg.dropout_rate,
         tie_weights=False,
-        max_seq_len=cfg.seq_len + 64,  # a little headroom
+        max_seq_len=cfg.seq_len + 64,
         pad_id=6,
     )
 
@@ -358,8 +348,6 @@ def run_training(
     train_loader, val_loader = build_dataloaders(cfg, device.type)
 
     # Optimiser
-    # Separate parameter groups: embeddings + biases don't get weight decay.
-    # This matches the convention in Loshchilov & Hutter (2019).
     decay_params = [
         p for n, p in model.named_parameters() if p.requires_grad and p.dim() >= 2
     ]
@@ -380,25 +368,37 @@ def run_training(
     total_steps = epochs * len(train_loader)
     scheduler = LambdaLR(optimiser, make_lr_lambda(cfg.warmup_steps, total_steps))
 
-    # Loss function
-    # ignore_index=-1 so we can mask padding tokens by setting their
-    # target to -1 in the DataLoader (not done here but easy to add).
     criterion = nn.CrossEntropyLoss(ignore_index=-1)
 
     # Logging
     log_path = LOG_DIR / f"{run_name}.csv"
-    with open(log_path, "w", newline="") as f:
-        csv.writer(f).writerow(
-            ["epoch", "step", "train_loss", "val_loss", "lr", "perplexity"]
-        )
+    ckpt_path = CKPT_DIR / f"{run_name}_best.pt"
+
+    # ── Resume from checkpoint if available ──────────────────────────────
+    start_epoch = 1
+    best_val_loss = float("inf")
+    train_losses, val_losses = [], []
+
+    if ckpt_path.exists():
+        print(f"  Resuming from {ckpt_path} …")
+        ckpt = torch.load(ckpt_path, map_location=device)
+        model.load_state_dict(ckpt["model_state"])
+        optimiser.load_state_dict(ckpt["optim_state"])
+        start_epoch = ckpt["epoch"] + 1
+        best_val_loss = ckpt["val_loss"]
+        print(f"  Resumed at epoch {start_epoch}, best_val_loss={best_val_loss:.4f}")
+    else:
+        # Fresh run — write CSV header
+        with open(log_path, "w", newline="") as f:
+            csv.writer(f).writerow(
+                ["epoch", "step", "train_loss", "val_loss", "lr", "perplexity"]
+            )
 
     early_stop = EarlyStopping(patience=cfg.patience, min_delta=cfg.min_delta)
-    ckpt_path = CKPT_DIR / f"{run_name}_best.pt"
-    train_losses, val_losses = [], []
-    best_val_loss = float("inf")
+    early_stop.best_loss = best_val_loss  # sync early stopping with resumed state
 
-    # Epoch loop
-    for epoch in range(1, epochs + 1):
+    # ── Epoch loop ────────────────────────────────────────────────────────
+    for epoch in range(start_epoch, epochs + 1):
         # --- Train ---
         model.train()
         epoch_loss = 0.0
@@ -411,7 +411,6 @@ def run_training(
         ):
             x, y = x.to(device), y.to(device)
 
-            # TBPTT: process seq_len in bptt_len-sized chunks
             chunk_losses = []
             for t in range(0, x.size(1), cfg.bptt_len):
                 xc = x[:, t : t + cfg.bptt_len]
@@ -441,9 +440,7 @@ def run_training(
 
             if (step + 1) % cfg.log_every == 0:
                 cur_lr = scheduler.get_last_lr()[0]
-                print(
-                    f"  e{epoch} step {step + 1:5d}  loss={batch_loss:.4f}  lr={cur_lr:.2e}"
-                )
+                print(f"  e{epoch} step {step + 1:5d}  loss={batch_loss:.4f}  lr={cur_lr:.2e}")
 
         avg_train_loss = epoch_loss / max(step_count, 1)
         train_losses.append(avg_train_loss)
@@ -451,7 +448,7 @@ def run_training(
         # --- Validate ---
         val_loss = evaluate(model, val_loader, criterion, device, model_cfg.vocab_size)
         val_losses.append(val_loss)
-        perplexity = math.exp(min(val_loss, 20))  # cap to avoid overflow
+        perplexity = math.exp(min(val_loss, 20))
         elapsed = time.time() - t0
 
         print(
@@ -462,17 +459,11 @@ def run_training(
             f"time={elapsed:.0f}s"
         )
 
-        # Save log row
+        # Append to log (don't overwrite existing rows)
         with open(log_path, "a", newline="") as f:
             csv.writer(f).writerow(
-                [
-                    epoch,
-                    step_count,
-                    avg_train_loss,
-                    val_loss,
-                    scheduler.get_last_lr()[0],
-                    perplexity,
-                ]
+                [epoch, step_count, avg_train_loss, val_loss,
+                 scheduler.get_last_lr()[0], perplexity]
             )
 
         # Save best checkpoint
@@ -492,11 +483,9 @@ def run_training(
             )
             print(f"  ✓ Saved best checkpoint (val_loss={val_loss:.4f}) → {ckpt_path}")
 
-        # Early stopping check
+        # Early stopping
         if early_stop.step(val_loss):
-            print(
-                f"  Early stopping triggered after {epoch} epochs (patience={cfg.patience})"
-            )
+            print(f"  Early stopping triggered after {epoch} epochs (patience={cfg.patience})")
             break
 
     return {
