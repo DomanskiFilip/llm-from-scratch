@@ -5,3 +5,5 @@ tqdm
 requests
 regex
 tokenizers
+matplotlib
+scikit-learn

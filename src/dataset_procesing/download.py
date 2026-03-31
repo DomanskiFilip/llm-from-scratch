@@ -16,6 +16,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+
 # helper
 def write_jsonl(path: Path, records: list[dict]) -> None:
     with open(path, "a", encoding="utf-8") as f:
@@ -42,8 +43,8 @@ def download_alpaca() -> int:
 
     def transform(row: dict) -> dict:
         instruction = row["instruction"].strip()
-        inp         = row.get("input", "").strip()
-        output      = row.get("output", "").strip()
+        inp = row.get("input", "").strip()
+        output = row.get("output", "").strip()
 
         if inp:
             prompt = (
@@ -52,17 +53,14 @@ def download_alpaca() -> int:
                 f"### Response:\n{output}"
             )
         else:
-            prompt = (
-                f"### Instruction:\n{instruction}\n\n"
-                f"### Response:\n{output}"
-            )
+            prompt = f"### Instruction:\n{instruction}\n\n### Response:\n{output}"
 
         return {
-            "source":      "alpaca-cleaned",
-            "text":        prompt,
+            "source": "alpaca-cleaned",
+            "text": prompt,
             "instruction": instruction,
-            "input":       inp,
-            "output":      output,
+            "input": inp,
+            "output": output,
         }
 
     out_path.unlink(missing_ok=True)
@@ -70,6 +68,7 @@ def download_alpaca() -> int:
     write_jsonl(out_path, records)
     log.info("Wrote %d examples to %s", len(records), out_path)
     return len(records)
+
 
 # Dataset 2 — Python Code Instructions (open, MIT-licensed)
 def download_python_code_instructions() -> int:
@@ -89,7 +88,7 @@ def download_python_code_instructions() -> int:
 
     SOURCES = [
         ("iamtarun/python_code_instructions_18k_alpaca", "train"),
-        ("flytech/python-codes-25k",                     "train"),
+        ("flytech/python-codes-25k", "train"),
     ]
 
     UNSAFE_PATTERNS = (
@@ -117,8 +116,8 @@ def download_python_code_instructions() -> int:
 
         for row in tqdm(ds, desc=dataset_name.split("/")[1]):
             instruction = (row.get("instruction") or "").strip()
-            inp         = (row.get("input") or "").strip()
-            output      = (row.get("output") or row.get("text") or "").strip()
+            inp = (row.get("input") or "").strip()
+            output = (row.get("output") or row.get("text") or "").strip()
 
             if not output:
                 continue
@@ -135,17 +134,16 @@ def download_python_code_instructions() -> int:
                     f"### Response:\n{output}"
                 )
             else:
-                text = (
-                    f"### Instruction:\n{instruction}\n\n"
-                    f"### Response:\n{output}"
-                )
+                text = f"### Instruction:\n{instruction}\n\n### Response:\n{output}"
 
-            buf.append({
-                "source":   dataset_name,
-                "text":     text,
-                "language": "python",
-                "license":  ["mit"],
-            })
+            buf.append(
+                {
+                    "source": dataset_name,
+                    "text": text,
+                    "language": "python",
+                    "license": ["mit"],
+                }
+            )
 
         write_jsonl(out_path, buf)
         log.info("  Kept %d examples from %s", len(buf), dataset_name)
@@ -154,7 +152,7 @@ def download_python_code_instructions() -> int:
     log.info("Total code examples written: %d → %s", total_kept, out_path)
     return total_kept
 
-#  Summary / stats 
+#  Summary / stats
 def print_stats() -> None:
     log.info("=== Dataset Summary ===")
     for fname in ["alpaca_cleaned.jsonl", "python_code_instructions.jsonl"]:
@@ -168,6 +166,7 @@ def print_stats() -> None:
 
         if "python_code_instructions" in fname:
             from collections import Counter
+
             lang_counts: Counter = Counter()
             with open(path, encoding="utf-8") as f:
                 for line in f:
@@ -177,32 +176,7 @@ def print_stats() -> None:
             for lang, cnt in lang_counts.most_common():
                 log.info("    %-20s %d", lang, cnt)
 
-
-#  Summary / stats 
-def print_stats() -> None:
-    log.info("=== Dataset Summary ===")
-    for fname in ["alpaca_cleaned.jsonl", "stack_v2_filtered.jsonl"]:
-        path = OUTPUT_DIR / fname
-        if not path.exists():
-            log.info("  %-35s  (not found)", fname)
-            continue
-        n = sum(1 for _ in open(path, encoding="utf-8"))
-        size_mb = path.stat().st_size / 1e6
-        log.info("  %-35s  %8d rows  %7.1f MB", fname, n, size_mb)
-
-        if "stack" in fname:
-            from collections import Counter
-            lang_counts: Counter = Counter()
-            with open(path, encoding="utf-8") as f:
-                for line in f:
-                    rec = json.loads(line)
-                    lang_counts[rec.get("language", "unknown")] += 1
-            log.info("  Language breakdown:")
-            for lang, cnt in lang_counts.most_common():
-                log.info("    %-20s %d", lang, cnt)
-
-
-# Entry point 
+# Entry point
 def main():
     log.info("Starting dataset preparation...")
     log.info("Output directory: %s", OUTPUT_DIR.resolve())
@@ -210,13 +184,16 @@ def main():
     alpaca_count = download_alpaca()
     python_code_count = download_python_code_instructions()
 
-    log.info("Done! Total examples: python_code_instructions=%d", python_code_count)
+    log.info(
+        "Done! Total examples: alpaca=%d, python_code_instructions=%d",
+        alpaca_count,
+        python_code_count,
+    )
     print_stats()
     log.info(
         "Next step: run  python main.py tokenise  to build the vocabulary "
         "and tokenise both datasets into binary shards for training."
     )
-
 
 
 if __name__ == "__main__":

@@ -12,3 +12,5 @@ py main.py generate --ckpt checkpoints/best_model_best.pt
 
 interactive mode:
 py main.py generate --ckpt checkpoints/default_run_best.pt
+
+Tip: start prompts with 'def ' or '# ' to get Python code

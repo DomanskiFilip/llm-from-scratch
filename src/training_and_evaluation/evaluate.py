@@ -30,21 +30,21 @@ PERPLEXITY
     choosing uniformly among 100 equally likely next tokens.
     Lower is better.  A char-level model on English might achieve PPL ≈ 2-3;
     a word-level model on Penn Treebank ≈ 60-80; our BPE code model at the
-    start of training ≈ exp(log(32768)) ≈ 32,768 (random baseline).
+    start of training ≈ exp(log(32768)) ≈ 32,768 (random baseline)
 
 TOKEN ACCURACY
     Top-1: fraction of positions where the most probable token equals the
     ground-truth next token.  This is a strict metric — the model must
     rank the correct token first.
     Top-5: fraction where the correct token is among the top 5 predictions.
-    Useful for seeing whether the model is "almost right" even when top-1 fails.
+    Useful for seeing whether the model is "almost right" even when top-1 fails
 
 CONFUSION MATRIX
     For language models, a full V×V confusion matrix (32,768 × 32,768) is
     not practical.  We restrict to the K most frequent tokens in the
     evaluation set (K=50 by default) and show an K×K matrix where entry
     (i,j) counts how often token i was the ground truth and token j was
-    the model's top prediction.  A good model has a diagonal matrix.
+    the model's top prediction.  A good model has a diagonal matrix
 
 PRECISION / RECALL / F1 (per-token)
     Treating each token as a binary classification problem (was token t
@@ -53,16 +53,12 @@ PRECISION / RECALL / F1 (per-token)
     Recall_t    = TP_t / (TP_t + FN_t)  — of all ground-truth t's, how many
                                            did we catch?
     F1_t        = 2 × P × R / (P + R)   — harmonic mean
-
-INSTALL
--------
-    pip install torch matplotlib numpy scikit-learn tqdm
 """
+
 import sys
 from pathlib import Path
-sys.path.append(str(Path(__file__).parent))
 
-from model import CodingLM, LMConfig
+sys.path.append(str(Path(__file__).parent))
 
 import argparse
 import json
@@ -73,20 +69,18 @@ import matplotlib.ticker as mticker
 import numpy as np
 import torch
 import torch.nn.functional as F
+from model import CodingLM, LMConfig
 from sklearn.metrics import (
-    confusion_matrix,
-    precision_recall_fscore_support,
     classification_report,
+    confusion_matrix,
 )
 from tqdm import tqdm
-
-from model import CodingLM, LMConfig      # model.py
-from train import ShardDataset, get_device  # train.py (ShardDataset, get_device)
+from train import get_device
 
 # Paths
-DATA_DIR   = Path("data")
-LOG_DIR    = Path("logs")
-EVAL_DIR   = Path("evaluation")
+DATA_DIR = Path("data")
+LOG_DIR = Path("logs")
+EVAL_DIR = Path("evaluation")
 EVAL_DIR.mkdir(parents=True, exist_ok=True)
 
 TOKENISER_JSON = Path("tokeniser") / "qwen_style.json"
@@ -97,13 +91,14 @@ TOP_K_TOKENS = 50
 
 # Load checkpoint
 
+
 def load_checkpoint(ckpt_path: Path, device: torch.device):
     """Load a checkpoint saved by train.py and return (model, metadata)."""
     ckpt = torch.load(ckpt_path, map_location=device)
-
     cfg_dict = ckpt["config"]
-    model_cfg = LMConfig(**{k: v for k, v in cfg_dict.items()
-                            if k in LMConfig.__dataclass_fields__})
+    model_cfg = LMConfig(
+        **{k: v for k, v in cfg_dict.items() if k in LMConfig.__dataclass_fields__}
+    )
     model = CodingLM(model_cfg).to(device)
     model.load_state_dict(ckpt["model_state"])
     model.eval()
@@ -114,6 +109,7 @@ def load_checkpoint(ckpt_path: Path, device: torch.device):
 
 # 1. Loss curves
 
+
 def plot_loss_curves(log_csv_path: Path, out_path: Path) -> None:
     """
     Read the CSV log written by train.py and plot train vs val loss
@@ -123,6 +119,7 @@ def plot_loss_curves(log_csv_path: Path, out_path: Path) -> None:
       - Good fit:    both curves fall together and converge
     """
     import csv
+
     epochs, train_losses, val_losses = [], [], []
     with open(log_csv_path) as f:
         reader = csv.DictReader(f)
@@ -133,7 +130,7 @@ def plot_loss_curves(log_csv_path: Path, out_path: Path) -> None:
                 e = int(row["epoch"])
                 t = float(row["train_loss"])
                 v = float(row["val_loss"])
-                if e not in epochs:           # first occurrence per epoch
+                if e not in epochs:  # first occurrence per epoch
                     epochs.append(e)
                     train_losses.append(t)
                     val_losses.append(v)
@@ -149,8 +146,12 @@ def plot_loss_curves(log_csv_path: Path, out_path: Path) -> None:
 
     # Left: loss
     ax = axes[0]
-    ax.plot(epochs, train_losses, "o-", label="Train loss",      color="#2196F3", linewidth=2)
-    ax.plot(epochs, val_losses,   "s--", label="Validation loss", color="#F44336", linewidth=2)
+    ax.plot(
+        epochs, train_losses, "o-", label="Train loss", color="#2196F3", linewidth=2
+    )
+    ax.plot(
+        epochs, val_losses, "s--", label="Validation loss", color="#F44336", linewidth=2
+    )
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Cross-entropy loss")
     ax.set_title("Loss vs Epochs")
@@ -160,9 +161,11 @@ def plot_loss_curves(log_csv_path: Path, out_path: Path) -> None:
     # Right: perplexity
     ax = axes[1]
     train_ppl = [math.exp(min(l, 20)) for l in train_losses]
-    val_ppl   = [math.exp(min(l, 20)) for l in val_losses]
-    ax.plot(epochs, train_ppl, "o-", label="Train PPL",      color="#2196F3", linewidth=2)
-    ax.plot(epochs, val_ppl,   "s--", label="Validation PPL", color="#F44336", linewidth=2)
+    val_ppl = [math.exp(min(l, 20)) for l in val_losses]
+    ax.plot(epochs, train_ppl, "o-", label="Train PPL", color="#2196F3", linewidth=2)
+    ax.plot(
+        epochs, val_ppl, "s--", label="Validation PPL", color="#F44336", linewidth=2
+    )
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Perplexity  (lower = better)")
     ax.set_title("Perplexity vs Epochs")
@@ -177,6 +180,7 @@ def plot_loss_curves(log_csv_path: Path, out_path: Path) -> None:
 
 
 # 2. Collect predictions
+
 
 @torch.no_grad()
 def collect_predictions(
@@ -199,7 +203,9 @@ def collect_predictions(
     all_targets, all_top1, all_logprobs = [], [], []
     hidden = None
 
-    for batch_idx, (x, y) in enumerate(tqdm(loader, desc="Evaluating", total=max_batches)):
+    for batch_idx, (x, y) in enumerate(
+        tqdm(loader, desc="Evaluating", total=max_batches)
+    ):
         if max_batches and batch_idx >= max_batches:
             break
         x, y = x.to(device), y.to(device)
@@ -207,7 +213,7 @@ def collect_predictions(
         hidden = CodingLM.detach_hidden(hidden)
 
         # [B*T, V]
-        logits_flat  = logits.reshape(-1, vocab_size)
+        logits_flat = logits.reshape(-1, vocab_size)
         targets_flat = y.reshape(-1)
 
         # Top-1 prediction
@@ -215,42 +221,46 @@ def collect_predictions(
 
         # Log-probability of the ground-truth token (for perplexity)
         log_probs = F.log_softmax(logits_flat, dim=-1)
-        gt_log_probs = log_probs[torch.arange(len(targets_flat), device=device), targets_flat]
+        gt_log_probs = log_probs[
+            torch.arange(len(targets_flat), device=device), targets_flat
+        ]
 
         all_targets.append(targets_flat.cpu())
         all_top1.append(top1.cpu())
         all_logprobs.append(gt_log_probs.cpu())
 
     return {
-        "targets"  : torch.cat(all_targets).numpy(),
-        "top1"     : torch.cat(all_top1).numpy(),
-        "logprobs" : torch.cat(all_logprobs).numpy(),
+        "targets": torch.cat(all_targets).numpy(),
+        "top1": torch.cat(all_top1).numpy(),
+        "logprobs": torch.cat(all_logprobs).numpy(),
     }
 
 
 # 3. Compute scalar metrics
 
+
 def compute_metrics(preds: dict) -> dict:
     """Compute perplexity, top-1 accuracy, top-5 accuracy (approx from top-1)."""
-    targets  = preds["targets"]
-    top1     = preds["top1"]
+    targets = preds["targets"]
+    top1 = preds["top1"]
     logprobs = preds["logprobs"]
 
     # Perplexity
-    avg_nll    = -float(np.mean(logprobs))
+    avg_nll = -float(np.mean(logprobs))
     perplexity = math.exp(min(avg_nll, 20))
 
     # Top-1 accuracy
     top1_acc = float(np.mean(targets == top1))
 
     return {
-        "perplexity"  : perplexity,
-        "avg_nll"     : avg_nll,
+        "perplexity": perplexity,
+        "avg_nll": avg_nll,
         "top1_accuracy": top1_acc,
     }
 
 
 # 4. Confusion matrix (top K tokens)
+
 
 def plot_confusion_matrix(
     preds: dict,
@@ -267,12 +277,11 @@ def plot_confusion_matrix(
     the correct answer was token i).
     """
     targets = preds["targets"]
-    top1    = preds["top1"]
+    top1 = preds["top1"]
 
     # Find the top_k most frequent token IDs in the ground truth
     unique, counts = np.unique(targets, return_counts=True)
     top_ids = unique[np.argsort(-counts)][:top_k]
-    top_set = set(top_ids.tolist())
 
     # Filter to positions where the ground truth is one of the top tokens
     mask = np.isin(targets, top_ids)
@@ -281,7 +290,7 @@ def plot_confusion_matrix(
 
     # Build confusion matrix
     labels = sorted(top_ids.tolist())
-    cm     = confusion_matrix(t_masked, p_masked, labels=labels)
+    cm = confusion_matrix(t_masked, p_masked, labels=labels)
 
     # Normalise by row (ground truth frequency) so colours encode recall
     row_sums = cm.sum(axis=1, keepdims=True).astype(float)
@@ -292,7 +301,7 @@ def plot_confusion_matrix(
     label_names = []
     for tid in labels:
         name = token_names[tid] if tid < len(token_names) else str(tid)
-        name = repr(name)[:12]   # truncate to fit
+        name = repr(name)[:12]  # truncate to fit
         label_names.append(name)
 
     fig, ax = plt.subplots(figsize=(14, 12))
@@ -314,17 +323,18 @@ def plot_confusion_matrix(
 
 # 5. Precision / Recall / F1 (top K tokens)
 
+
 def compute_prf(preds: dict, top_k: int = TOP_K_TOKENS) -> str:
     """
     Compute precision, recall, and F1 for the top_k most frequent tokens.
     Returns a formatted string report.
     """
     targets = preds["targets"]
-    top1    = preds["top1"]
+    top1 = preds["top1"]
 
     unique, counts = np.unique(targets, return_counts=True)
     top_ids = unique[np.argsort(-counts)][:top_k].tolist()
-    mask    = np.isin(targets, top_ids)
+    mask = np.isin(targets, top_ids)
 
     report = classification_report(
         targets[mask],
@@ -482,11 +492,19 @@ def write_insights(metrics: dict, ckpt_path: str, out_path: Path) -> None:
 
 # Entry point
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate a trained CodingLM checkpoint")
-    parser.add_argument("--ckpt",    type=str, required=True, help="Path to .pt checkpoint")
-    parser.add_argument("--device",  type=str, default="auto")
-    parser.add_argument("--batches", type=int, default=200,
-                        help="Max evaluation batches (None = full val set)")
+    parser = argparse.ArgumentParser(
+        description="Evaluate a trained CodingLM checkpoint"
+    )
+    parser.add_argument(
+        "--ckpt", type=str, required=True, help="Path to .pt checkpoint"
+    )
+    parser.add_argument("--device", type=str, default="auto")
+    parser.add_argument(
+        "--batches",
+        type=int,
+        default=200,
+        help="Max evaluation batches (None = full val set)",
+    )
     args = parser.parse_args()
 
     device = get_device(args.device)
@@ -498,8 +516,8 @@ def main() -> None:
     vocab_size = model.config.vocab_size
 
     # 2. Loss curves — find the matching log CSV
-    run_name  = ckpt.get("run_name", "default_run")
-    log_csv   = Path("logs") / f"{run_name}.csv"
+    run_name = ckpt.get("run_name", "default_run")
+    log_csv = Path("logs") / f"{run_name}.csv"
     if log_csv.exists():
         plot_loss_curves(log_csv, EVAL_DIR / "loss_curves.png")
     else:
@@ -507,16 +525,18 @@ def main() -> None:
 
     # 3. Build val dataloader
     from train import TrainConfig, build_dataloaders
+
     train_cfg = TrainConfig(
-        seq_len    = cfg_dict.get("seq_len", 256),
-        batch_size = cfg_dict.get("batch_size", 32),
-        device     = args.device,
+        seq_len=cfg_dict.get("seq_len", 256),
+        batch_size=cfg_dict.get("batch_size", 32),
+        device=args.device,
     )
     _, val_loader = build_dataloaders(train_cfg, device.type)
 
     # 4. Collect predictions
-    preds = collect_predictions(model, val_loader, device, vocab_size,
-                                max_batches=args.batches)
+    preds = collect_predictions(
+        model, val_loader, device, vocab_size, max_batches=args.batches
+    )
 
     # 5. Scalar metrics
     metrics = compute_metrics(preds)
@@ -529,13 +549,14 @@ def main() -> None:
     token_names = []
     if TOKENISER_JSON.exists():
         from tokenizers import Tokenizer
+
         tok = Tokenizer.from_file(str(TOKENISER_JSON))
         token_names = [tok.id_to_token(i) or "" for i in range(vocab_size)]
     plot_confusion_matrix(preds, token_names, EVAL_DIR / "confusion_matrix.png")
 
     # 7. Precision / Recall / F1
     prf_report = compute_prf(preds)
-    prf_path   = EVAL_DIR / "precision_recall_f1.txt"
+    prf_path = EVAL_DIR / "precision_recall_f1.txt"
     with open(prf_path, "w") as f:
         f.write(prf_report)
     print(f"  PRF report saved → {prf_path}")

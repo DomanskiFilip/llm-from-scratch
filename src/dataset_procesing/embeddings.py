@@ -102,39 +102,34 @@ The final weight matrix has shape [VOCAB_SIZE, EMBED_DIM].  It is saved as
 a .npy file and also as a PyTorch .pt tensor for direct use in nn.Embedding
 """
 
-import io
-import os
 import re
-import struct
 import zipfile
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 import numpy as np
-import torch
 import requests
+import torch
 from tokenizers import Tokenizer
 from tqdm import tqdm
 
-
 # Paths
-DATA_DIR      = Path("data")
-MODEL_DIR     = Path("tokeniser")
-EMBED_DIR     = Path("embeddings")
+DATA_DIR = Path("data")
+MODEL_DIR = Path("tokeniser")
+EMBED_DIR = Path("embeddings")
 EMBED_DIR.mkdir(parents=True, exist_ok=True)
 
 TOKENISER_JSON = MODEL_DIR / "qwen_style.json"
-GLOVE_ZIP      = EMBED_DIR / "glove.6B.zip"
-GLOVE_TXT      = EMBED_DIR / "glove.6B.100d.txt"
-GLOVE_ALIGNED  = EMBED_DIR / "glove_aligned.pt"    # final weight matrix
-COVERAGE_LOG   = EMBED_DIR / "alignment_coverage.txt"
+GLOVE_ZIP = EMBED_DIR / "glove.6B.zip"
+GLOVE_TXT = EMBED_DIR / "glove.6B.100d.txt"
+GLOVE_ALIGNED = EMBED_DIR / "glove_aligned.pt"  # final weight matrix
+COVERAGE_LOG = EMBED_DIR / "alignment_coverage.txt"
 
 
 # Configuration
-GLOVE_URL  = "https://nlp.stanford.edu/data/glove.6B.zip"   # 822 MB zip
-EMBED_DIM  = 100    # GloVe-100d — change to 200/300 if you download those
+GLOVE_URL = "https://nlp.stanford.edu/data/glove.6B.zip"  # 822 MB zip
+EMBED_DIM = 100  # GloVe-100d — change to 200/300 if you download those
 RANDOM_SEED = 42
-
 
 
 # Download helpers
@@ -164,7 +159,6 @@ def extract_glove(zip_path: Path, txt_path: Path) -> None:
             dst.write(src.read())
 
 
-
 # Load GloVe vectors into a dict
 
 
@@ -187,11 +181,10 @@ def load_glove(txt_path: Path) -> Dict[str, np.ndarray]:
         for line in tqdm(f, total=400_000, unit=" words"):
             parts = line.rstrip().split(" ")
             word = parts[0]
-            vec  = np.array(parts[1:], dtype=np.float32)
+            vec = np.array(parts[1:], dtype=np.float32)
             glove[word] = vec
     print(f"  Loaded {len(glove):,} GloVe vectors (dim={EMBED_DIM})")
     return glove
-
 
 
 # Byte-level prefix decoder
@@ -201,6 +194,7 @@ def load_glove(txt_path: Path) -> Dict[str, np.ndarray]:
 # vocabulary look like "Ġdef" or "Ġreturn" where Ġ = U+0120 represents a
 # space byte (0x20).  We need to strip these aliases before looking up the
 # word in GloVe.
+
 
 # Build the GPT-2 byte→char mapping (same table used in tokenizers library)
 def _build_byte_decoder() -> Dict[int, int]:
@@ -219,6 +213,7 @@ def _build_byte_decoder() -> Dict[int, int]:
             n += 1
     return {c: b for b, c in zip(bs, cs)}
 
+
 _BYTE_DECODER = _build_byte_decoder()
 
 
@@ -235,7 +230,6 @@ def bpe_token_to_text(token: str) -> str:
         return byte_vals.decode("utf-8")
     except UnicodeDecodeError:
         return ""
-
 
 
 # Alignment: BPE vocab → GloVe vectors
@@ -257,12 +251,12 @@ def align_to_bpe(
       3. Sub-word average: split decoded string into GloVe words, average
       4. Random (N(0, σ) where σ = std of all GloVe vectors)
     """
-    vocab      = tokeniser.get_vocab()           # {token_str: id}
+    vocab = tokeniser.get_vocab()  # {token_str: id}
     vocab_size = tokeniser.get_vocab_size()
 
     # Compute the standard deviation of GloVe vectors for random init
-    glove_std  = float(np.std(np.stack(list(glove.values()))))
-    rng        = np.random.default_rng(RANDOM_SEED)
+    glove_std = float(np.std(np.stack(list(glove.values()))))
+    rng = np.random.default_rng(RANDOM_SEED)
 
     weight = rng.normal(0.0, glove_std, size=(vocab_size, embed_dim)).astype(np.float32)
 
@@ -273,17 +267,22 @@ def align_to_bpe(
 
     print(f"  Aligning {vocab_size:,} BPE tokens to GloVe …")
     for token_str, token_id in tqdm(vocab.items(), total=vocab_size):
-
         # --- Special tokens: leave at random init, mark separately -------
-        if token_str in ("<|endoftext|>", "<|im_start|>", "<|im_end|>",
-                         "<|fim_prefix|>", "<|fim_suffix|>", "<|fim_middle|>",
-                         "<|pad|>"):
+        if token_str in (
+            "<|endoftext|>",
+            "<|im_start|>",
+            "<|im_end|>",
+            "<|fim_prefix|>",
+            "<|fim_suffix|>",
+            "<|fim_middle|>",
+            "<|pad|>",
+        ):
             stats["special"] += 1
             continue
 
         # Decode the ByteLevel-encoded token string back to plain text
         decoded = bpe_token_to_text(token_str)
-        stripped = decoded.strip()          # remove leading/trailing spaces
+        stripped = decoded.strip()  # remove leading/trailing spaces
 
         # Priority 1: exact match
         if stripped in glove:
@@ -315,13 +314,12 @@ def align_to_bpe(
     return weight, stats
 
 
-
 # Main
 
 
 def main() -> None:
 
-    # 1. Download & extract GloVe 
+    # 1. Download & extract GloVe
     download_file(GLOVE_URL, GLOVE_ZIP)
     extract_glove(GLOVE_ZIP, GLOVE_TXT)
 
@@ -358,10 +356,10 @@ def main() -> None:
         f"  Special tokens    : {stats['special']:>10,}\n"
         f"  Regular tokens    : {total_regular:>10,}\n"
         f"\n"
-        f"Exact match         : {stats['exact']:>10,}  ({100*stats['exact']/max(total_regular,1):.1f}%)\n"
-        f"Lowercase match     : {stats['lower']:>10,}  ({100*stats['lower']/max(total_regular,1):.1f}%)\n"
-        f"Sub-word average    : {stats['subword_avg']:>10,}  ({100*stats['subword_avg']/max(total_regular,1):.1f}%)\n"
-        f"Random init         : {stats['random']:>10,}  ({100*stats['random']/max(total_regular,1):.1f}%)\n"
+        f"Exact match         : {stats['exact']:>10,}  ({100 * stats['exact'] / max(total_regular, 1):.1f}%)\n"
+        f"Lowercase match     : {stats['lower']:>10,}  ({100 * stats['lower'] / max(total_regular, 1):.1f}%)\n"
+        f"Sub-word average    : {stats['subword_avg']:>10,}  ({100 * stats['subword_avg'] / max(total_regular, 1):.1f}%)\n"
+        f"Random init         : {stats['random']:>10,}  ({100 * stats['random'] / max(total_regular, 1):.1f}%)\n"
         f"\n"
         f"Total GloVe coverage: {covered:>10,} / {total_regular:,}  ({pct:.1f}%)\n"
         f"\n"
@@ -395,10 +393,8 @@ def main() -> None:
         if probe_id is None:
             continue
         probe_vec = torch.from_numpy(weight[probe_id])
-        all_vecs  = torch.from_numpy(weight[:5000])       # check in first 5k
-        sims = torch.nn.functional.cosine_similarity(
-            probe_vec.unsqueeze(0), all_vecs
-        )
+        all_vecs = torch.from_numpy(weight[:5000])  # check in first 5k
+        sims = torch.nn.functional.cosine_similarity(probe_vec.unsqueeze(0), all_vecs)
         top5_ids = sims.topk(6).indices.tolist()
         words = [tokeniser.id_to_token(i) for i in top5_ids if i != probe_id][:5]
         print(f"  '{probe}' → {words}")

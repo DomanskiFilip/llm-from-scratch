@@ -20,7 +20,7 @@ def main():
     elif args.command == "tokenise":
         from dataset_procesing.tokeniser import main as run
     elif args.command == "embeddings":
-        from dataset_procesing.embedings import main as run
+        from dataset_procesing.embeddings import main as run
     elif args.command == "train":
         from training_and_evaluation.train import main as run
     elif args.command == "evaluate":

@@ -31,27 +31,27 @@ Key design decisions taken from that paper / the Qwen codebase:
       allowed *within* a pre-token — never across a boundary.  This prevents
       the tokeniser learning merges like "  the" (trailing space of one word
       fused with the next), which would waste vocabulary slots.
-      Qwen uses the same cl100k_base regex as GPT-4 (tiktoken library).
-      Source: Bai et al. 2023 §2.1; tiktoken openai_public.py cl100k_base.
+      Qwen uses the same cl100k_base regex as GPT-4 (tiktoken library)
+      Source: Bai et al. 2023 §2.1; tiktoken openai_public.py cl100k_base
 
   [QWEN-3] LARGE VOCABULARY (151,643 REGULAR TOKENS)
       Qwen's production vocabulary has 151,643 regular BPE tokens plus 208
       control/special tokens = 151,851 total.  A larger vocab means longer
       tokens on average → fewer tokens per document → shorter sequences →
       less memory at training time.  We use a smaller vocab here (32,768)
-      because we are training from scratch on limited compute.
-      Source: Bai et al. 2023 §2.1; QwenLM/Qwen tokenization_note.md.
+      because we are training from scratch on limited compute
+      Source: Bai et al. 2023 §2.1; QwenLM/Qwen tokenization_note.md
 
   [QWEN-4] SPECIAL TOKENS WITH ChatML FORMATTING
       Qwen wraps every conversation turn with <|im_start|>role\n...<|im_end|>
       (the ChatML format, originally from OpenAI).  We adopt the same special
-      tokens so that later fine-tuning on instruction data is straightforward.
+      tokens so that later fine-tuning on instruction data is straightforward
       Source: Bai et al. 2023 §2.1
 
   [QWEN-5] NO BOS/EOS IN THE TRADITIONAL SENSE
       Qwen deliberately avoids a single bos/eos token.  Document boundaries
-      are marked by <|endoftext|> (ID = VOCAB_SIZE − 1 in our scheme).
-      Source: Bai et al. 2023 §2.1; QwenLM/Qwen tokenization_note.md.
+      are marked by <|endoftext|> (ID = VOCAB_SIZE − 1 in our scheme)
+      Source: Bai et al. 2023 §2.1; QwenLM/Qwen tokenization_note.md
 
 Usage
 -----
@@ -75,12 +75,10 @@ from tokenizers import (
     decoders,
     models,
     pre_tokenizers,
-    processors,
     trainers,
 )
 from tokenizers.pre_tokenizers import ByteLevel, Sequence, Split
 from tqdm import tqdm
-
 
 # Paths
 
@@ -88,18 +86,18 @@ DATA_DIR = Path("data")
 MODEL_DIR = Path("tokeniser")
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
-ALPACA_JSONL    = DATA_DIR / "alpaca_cleaned.jsonl"
+ALPACA_JSONL = DATA_DIR / "alpaca_cleaned.jsonl"
 PYTHON_CODE_JSONL = DATA_DIR / "python_code_instructions.jsonl"
-TOKENISER_JSON  = MODEL_DIR / "qwen_style.json"
-VOCAB_TXT       = MODEL_DIR / "vocab.txt"
+TOKENISER_JSON = MODEL_DIR / "qwen_style.json"
+VOCAB_TXT = MODEL_DIR / "vocab.txt"
 
 
 # Hyperparameters
 
 
-VOCAB_SIZE         = 32_768
+VOCAB_SIZE = 32_768
 TRAIN_SAMPLE_LINES = 200_000
-TOKENS_PER_SHARD   = 10_000_000
+TOKENS_PER_SHARD = 10_000_000
 
 
 # [QWEN-2] Pre-tokenisation regex — identical to GPT-4's cl100k_base
@@ -131,7 +129,6 @@ SPECIAL_TOKENS = [
 EOT_TOKEN = "<|endoftext|>"
 
 
-
 # Text cleaning
 def clean_text(text: str) -> str:
     """
@@ -149,7 +146,6 @@ def clean_text(text: str) -> str:
     text = re.sub(r"\x1b\[[0-9;]*[mGKHF]", "", text)
     text = re.sub(r"\n{4,}", "\n\n\n", text)
     return text.strip()
-
 
 
 # Dataset streaming helpers
@@ -184,7 +180,7 @@ def interleaved_texts(sample: int = TRAIN_SAMPLE_LINES) -> Generator[str, None, 
 
     if code_available:
         alpaca_iter = iter_texts(ALPACA_JSONL, max_lines=sample)
-        code_iter  = iter_texts(PYTHON_CODE_JSONL,  max_lines=sample)
+        code_iter = iter_texts(PYTHON_CODE_JSONL, max_lines=sample)
         for a, c in zip(alpaca_iter, code_iter):
             yield a
             yield c
@@ -198,7 +194,6 @@ def interleaved_texts(sample: int = TRAIN_SAMPLE_LINES) -> Generator[str, None, 
             "training tokeniser on Alpaca only."
         )
         yield from iter_texts(ALPACA_JSONL, max_lines=sample)
-
 
 
 # Tokeniser construction
@@ -241,7 +236,6 @@ def build_tokeniser() -> Tokenizer:
     return tokeniser
 
 
-
 # Encoding helpers
 def encode_with_eot(tokeniser: Tokenizer, text: str) -> list[int]:
     """Encode a single document and append the <|endoftext|> boundary token."""
@@ -270,7 +264,9 @@ def encode_dataset(
     Skips gracefully if the file does not exist.
     """
     if not jsonl_path.exists():
-        print(f"  [SKIP] {jsonl_path} not found — skipping encoding for '{out_prefix}'.")
+        print(
+            f"  [SKIP] {jsonl_path} not found — skipping encoding for '{out_prefix}'."
+        )
         return
 
     shard_idx = 0
@@ -310,7 +306,6 @@ def save_vocab_txt(tokeniser: Tokenizer) -> None:
     print(f"  Vocab saved to {VOCAB_TXT}")
 
 
-
 # Entry point
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -334,12 +329,12 @@ def main() -> None:
 
     print("\nEncoding datasets into binary shards …")
     encode_dataset(tokeniser, ALPACA_JSONL, "alpaca")
-    encode_dataset(tokeniser, PYTHON_CODE_JSONL,  "python_code_instructions")   # skipped if missing
+    encode_dataset(
+        tokeniser, PYTHON_CODE_JSONL, "python_code_instructions"
+    )  # skipped if missing
 
     print("\nDone!  Shards are in data/")
-    print(
-        "Next step: run  embeddings.py  to build GloVe-initialised weight matrices."
-    )
+    print("Next step: run  embeddings.py  to build GloVe-initialised weight matrices.")
 
 
 if __name__ == "__main__":
