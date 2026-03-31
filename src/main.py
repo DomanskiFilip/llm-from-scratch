@@ -1,16 +1,3 @@
-"""
-main.py — project entry point
-Run with:  python main.py [command] [options]
-
-python main.py download
-python main.py tokeniser
-python main.py embeddings
-python main.py train --grid-search
-python main.py evaluate --ckpt checkpoints/best_model_best.pt
-python main.py generate --ckpt checkpoints/best_model_best.pt
-
-"""
-
 import argparse
 import sys
 

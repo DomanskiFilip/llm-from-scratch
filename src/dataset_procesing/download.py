@@ -289,8 +289,8 @@ def main():
     log.info("Starting dataset preparation...")
     log.info("Output directory: %s", OUTPUT_DIR.resolve())
 
-    # alpaca_count = download_alpaca()
-    python_code_count  = download_python_code_instructions()
+    alpaca_count = download_alpaca()
+    python_code_count = download_python_code_instructions()
 
     log.info("Done! Total examples: python_code_instructions=%d", python_code_count)
     print_stats()

@@ -11,16 +11,7 @@ The architecture is a multi-layer LSTM with:
   - A linear projection head that maps hidden states → vocabulary logits
 
 This file can also be run directly as a script to print a model summary
-and verify shapes are correct before you start a full training run.
-
-REQUIREMENT COVERAGE (Req 1.2.1)
----------------------------------
-  ✓ Embedding layer (pre-trained or learnable)
-  ✓ Recurrent layers (LSTM)
-  ✓ Fully connected layers for prediction
-  ✓ Dropout layers
-  ✓ Early stopping (implemented in train.py, referenced here)
-  ✓ Detailed explanations of every layer and its purpose
+and verify shapes are correct before you start a full training run
 
 WHY LSTM AND NOT A TRANSFORMER?
 ---------------------------------

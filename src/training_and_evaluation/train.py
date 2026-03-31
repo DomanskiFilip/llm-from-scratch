@@ -256,7 +256,7 @@ def build_dataloaders(cfg: TrainConfig, device_type: str):
     )
     val_loader = torch.utils.data.DataLoader(
         val_ds, batch_size=cfg.batch_size, shuffle=False,
-        num_workers=2, pin_memory=pin, drop_last=False,
+        num_workers=2, pin_memory=pin, drop_last=True,
     )
     return train_loader, val_loader
 
@@ -508,7 +508,7 @@ def evaluate(
 
     for x, y in loader:
         x, y = x.to(device), y.to(device)
-        logits, hidden = model(x, hidden)
+        logits, hidden = model(x, None)
         hidden = CodingLM.detach_hidden(hidden)
         loss = criterion(logits.reshape(-1, vocab_size), y.reshape(-1))
         total_loss += loss.item()
