@@ -506,7 +506,7 @@ def evaluate(
     n_batches  = 0
     hidden     = None
 
-    for x, y in loader:
+    for x, y in tqdm(loader, desc="Validating", leave=False):
         x, y = x.to(device), y.to(device)
         logits, hidden = model(x, None)
         hidden = CodingLM.detach_hidden(hidden)
