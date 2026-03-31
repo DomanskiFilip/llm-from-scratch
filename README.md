@@ -9,3 +9,6 @@ py model.py (optionally and standalone)
 py main.py train --grid-search
 py main.py evaluate --ckpt checkpoints/best_model_best.pt
 py main.py generate --ckpt checkpoints/best_model_best.pt
+
+interactive mode:
+py main.py generate --ckpt checkpoints/default_run_best.pt
