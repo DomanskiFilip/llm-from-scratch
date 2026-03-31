@@ -6,67 +6,8 @@ from datasets import load_dataset
 from tqdm import tqdm
 
 # Configuration
-
 OUTPUT_DIR = Path("data")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# Permissive / open-source licences we want to keep (SPDX ids, lower-cased).
-# bigcode/the-stack-dedup stores licences in a field called 'licenses' (plural,
-# list[str]).  Every file in the dataset already passed a permissive-licence
-# filter, but some rows still carry copyleft or unknown tags, so we re-check.
-ALLOWED_LICENCES: set[str] = {
-    # MIT family
-    "mit",
-    # Apache family
-    "apache-2.0",
-    "apache-1.1",
-    # BSD family
-    "bsd-2-clause",
-    "bsd-3-clause",
-    "bsd-4-clause",
-    # Public domain / unlicensed
-    "unlicense",
-    "cc0-1.0",
-    "public-domain",
-    # Mozilla
-    "mpl-2.0",
-    # ISC
-    "isc",
-    # Boost
-    "bsl-1.0",
-    # Python
-    "python-2.0",
-    # zlib
-    "zlib",
-    # Artistic
-    "artistic-2.0",
-    # LGPL (weak copyleft, broadly accepted for training data)
-    "lgpl-2.0",
-    "lgpl-2.1",
-    "lgpl-3.0",
-    # Educational / Creative Commons (no-derivatives variants excluded)
-    "cc-by-4.0",
-    "cc-by-3.0",
-    "cc-by-sa-4.0",   # share-alike only
-}
-
-# Languages to collect.
-# Each key maps to the data_dir path used by bigcode/the-stack-dedup.
-LANGUAGE_SUBSETS: dict[str, str] = {
-    "python":     "data/python",
-    "javascript": "data/javascript",
-    "typescript": "data/typescript",
-    "rust":       "data/rust",
-    "java":       "data/java",
-    "shell":      "data/shell",
-    "sql":        "data/sql",
-}
-
-# Streaming chunk size
-WRITE_BATCH = 5_000
-
-# Cap per language (set to None for unlimited)
-STACK_MAX_PER_LANGUAGE: int | None = 100_000
 
 logging.basicConfig(
     level=logging.INFO,
@@ -75,27 +16,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-
-# Helpers 
-
-def normalise_licence(raw: str) -> str:
-    return raw.strip().lower()
-
-
-def is_permitted_licence(licence_field) -> bool:
-    """
-    Accept a str, list[str], or None.
-    Returns True if *any* declared licence is in ALLOWED_LICENCES.
-    Files with no licence info are discarded.
-    """
-    if not licence_field:
-        return False
-    if isinstance(licence_field, str):
-        licence_field = [licence_field]
-    normalised = {normalise_licence(lic) for lic in licence_field}
-    return bool(normalised & ALLOWED_LICENCES)
-
-
+# helper
 def write_jsonl(path: Path, records: list[dict]) -> None:
     with open(path, "a", encoding="utf-8") as f:
         for rec in records:
@@ -103,7 +24,6 @@ def write_jsonl(path: Path, records: list[dict]) -> None:
 
 
 # Dataset 1 — Alpaca Cleaned (instruction tuning)
-
 def download_alpaca() -> int:
     """
     unsloth/alpaca-cleaned schema:
@@ -151,19 +71,17 @@ def download_alpaca() -> int:
     log.info("Wrote %d examples to %s", len(records), out_path)
     return len(records)
 
-
-# Dataset 2 — The Stack (deduplicated, code, licence-filtered)
 # Dataset 2 — Python Code Instructions (open, MIT-licensed)
 def download_python_code_instructions() -> int:
     """
-    Two open, MIT-licensed Python code datasets — no gating, no login required.
+    Two open, MIT-licensed Python code datasets — no gating, no login required
 
       1. iamtarun/python_code_instructions_18k_alpaca  (~18k instruction+code pairs)
       2. flytech/python-codes-25k                      (~25k instruction+code pairs)
 
     Both are Alpaca-format: instruction / input / output fields where the
     output contains Python code. We format them the same way as Alpaca so
-    the tokeniser sees consistent prompt structure across both datasets.
+    the tokeniser sees consistent prompt structure across both datasets
     """
     log.info("=== Python code datasets (open, MIT-licensed) ===")
     out_path = OUTPUT_DIR / "python_code_instructions.jsonl"
