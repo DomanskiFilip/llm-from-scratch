@@ -317,7 +317,7 @@ def main(config: Config) -> None:
     # Load our BPE tokeniser
     if not TOKENISER_JSON.exists():
         raise FileNotFoundError(
-            f"{TOKENISER_JSON} not found.  Run 02_tokeniser.py first."
+            f"{TOKENISER_JSON} not found. tokeniser first."
         )
     print(f"  Loading tokeniser from {TOKENISER_JSON} …")
     tokeniser = Tokenizer.from_file(str(TOKENISER_JSON))

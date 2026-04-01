@@ -12,4 +12,6 @@ py -m src.main evaluate --ckpt checkpoints/best_model_best.pt
 interactive mode:
 py -m src.main generate --ckpt checkpoints/default_run_best.pt
 
+you can youse python instead of py
+
 Tip: start prompts with 'def ' or '# ' to get Python code
