@@ -95,9 +95,9 @@ VOCAB_TXT = MODEL_DIR / "vocab.txt"
 # Hyperparameters
 
 
-VOCAB_SIZE = 32_768
-TRAIN_SAMPLE_LINES = 200_000
-TOKENS_PER_SHARD = 10_000_000
+VOCAB_SIZE = 8192
+TRAIN_SAMPLE_LINES = 200000
+TOKENS_PER_SHARD = 10000000
 
 
 # [QWEN-2] Pre-tokenisation regex — identical to GPT-4's cl100k_base

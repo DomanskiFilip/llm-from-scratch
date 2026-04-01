@@ -573,14 +573,14 @@ if __name__ == "__main__":
     import time
 
     cfg = LMConfig(
-        vocab_size=32_768,
-        embed_dim=100,
-        hidden_dim=512,
-        n_layers=2,
+        vocab_size=8192,
+        embed_dim=256,
+        hidden_dim=256,
+        n_layers=3,
         embed_drop=0.1,
         lstm_drop=0.2,
         out_drop=0.2,
-        tie_weights=False,  # embed_dim ≠ hidden_dim, so can't tie here
+        tie_weights=True,  # ONLY IF EMBED_DIM = HIDDEN_DIM
         max_seq_len=512,
         pad_id=6,
     )

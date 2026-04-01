@@ -107,20 +107,20 @@ class TrainConfig:
     bptt_len: int = 64  # TBPTT chunk length (how far back gradients flow)
 
     # --- Optimisation ---
-    lr: float = 3e-4  # peak learning rate for AdamW
+    lr: float = 5e-4  # peak learning rate for AdamW
     weight_decay: float = 0.1  # AdamW weight decay
     clip_norm: float = 1.0  # gradient clipping norm
-    warmup_steps: int = 200  # linear LR warmup steps
+    warmup_steps: int = 300  # linear LR warmup steps
 
     # --- Schedule ---
-    epochs: int = 20
-    batch_size: int = 32
+    epochs: int = 30
+    batch_size: int = 64
 
     # --- Regularisation ---
-    dropout_rate: float = 0.2  # applied to embed_drop, lstm_drop, out_drop
+    dropout_rate: float = 0.15  # applied to embed_drop, lstm_drop, out_drop
 
     # --- Early stopping ---
-    patience: int = 3  # stop if val loss doesn't improve for this many epochs
+    patience: int = 5  # stop if val loss doesn't improve for this many epochs
     min_delta: float = 1e-4  # minimum improvement to count as improvement
 
     # --- Hardware ---
@@ -144,7 +144,7 @@ GRID = {
 # 3 × 2 × 2 = 12 runs.  Each run trains for `grid_epochs` epochs only to
 # keep the search affordable; the best config is then trained to convergence.
 GRID_EPOCHS = 3  # short runs for the search
-FULL_EPOCHS = 20  # full run with the best config
+FULL_EPOCHS = 30  # full run with the best config
 
 
 # Device selection
@@ -325,14 +325,14 @@ def run_training(
 
     # Build model
     model_cfg = LMConfig(
-        vocab_size=32_768,
-        embed_dim=100,
-        hidden_dim=512,
-        n_layers=2,
+        vocab_size=8_192,
+        embed_dim=256,
+        hidden_dim=256,
+        n_layers=3,
         embed_drop=cfg.dropout_rate,
         lstm_drop=cfg.dropout_rate,
         out_drop=cfg.dropout_rate,
-        tie_weights=False,
+        tie_weights=True,
         max_seq_len=cfg.seq_len + 64,
         pad_id=6,
     )
