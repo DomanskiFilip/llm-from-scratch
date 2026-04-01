@@ -11,9 +11,9 @@ class Config:
     # It also MUST equal embedding_dim (GloVe dim) so the pretrained matrix
     # loads without shape errors.  We use 100 to match GloVe-100d.
     # If you want a larger model, switch to GloVe-300d and set all three to 300.
-    embed_dim: int = 100
-    hidden_dim: int = 100          # keep equal to embed_dim for weight tying
-    n_layers: int = 2
+    embed_dim: int = 256
+    hidden_dim: int = 256         # keep equal to embed_dim for weight tying
+    n_layers: int = 3
     tie_weights: bool = True       # only valid when embed_dim == hidden_dim
     max_seq_len: int = 512
     pad_id: int = 0
