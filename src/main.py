@@ -21,17 +21,17 @@ def main():
     config = Config()
 
     if args.command == "download":
-        from dataset_procesing.download import main as run
+        from src.dataset_procesing.download import main as run
     elif args.command == "tokenise":
-        from dataset_procesing.tokeniser import main as run
+        from src.dataset_procesing.tokeniser import main as run
     elif args.command == "embeddings":
-        from dataset_procesing.embeddings import main as run
+        from src.dataset_procesing.embeddings import main as run
     elif args.command == "train":
-        from training_and_evaluation.train import main as run
+        from src.training_and_evaluation.train import main as run
     elif args.command == "evaluate":
-        from training_and_evaluation.evaluate import main as run
+        from src.training_and_evaluation.evaluate import main as run
     elif args.command == "generate":
-        from training_and_evaluation.generate import main as run
+        from src.training_and_evaluation.generate import main as run
     else:
         parser.print_help()
         sys.exit(0)
