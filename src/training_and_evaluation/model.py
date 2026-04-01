@@ -18,15 +18,9 @@ WHY LSTM AND NOT A TRANSFORMER?
 Transformers (Vaswani et al. 2017, "Attention Is All You Need",
 arXiv:1706.03762) dominate modern LLMs because self-attention scales better
 and parallelises across the whole sequence at once.  However:
-
-  1. Transformers require O(n²) memory in the sequence length.  For code,
-     sequences can be very long (whole files); an LSTM handles arbitrary
-     length with O(1) memory per step
-  2. LSTMs are conceptually simpler to explain (Req 1.2.1 asks for
-     "detailed explanations") and their limitations lead naturally into
-     the Req 1.3.2 discussion of "areas for improvement → transformers/BERT"
-  3. The Karpathy-style approach (nanoGPT / minGPT) the project is modelled
-     on actually *starts* with an RNN/LSTM before introducing transformers
+Transformers require O(n²) memory in the sequence length.  For code,
+sequences can be very long (whole files); an LSTM handles arbitrary
+length with O(1) memory per step
 
 ARCHITECTURE OVERVIEW
 ---------------------
@@ -108,13 +102,13 @@ class LMConfig:
       pad_id        Token ID used for padding (should match <|pad|> from vocab)
     """
 
-    vocab_size: int = 32_768
-    embed_dim: int = 100  # match GloVe-100d
-    hidden_dim: int = 512
+    vocab_size: int = 8192
+    embed_dim: int = 256  # match GloVe-100d
+    hidden_dim: int = 256
     n_layers: int = 2
     embed_drop: float = 0.1
     lstm_drop: float = 0.2
-    out_drop: float = 0.2
+    out_drop: float = 0.15
     tie_weights: bool = True
     max_seq_len: int = 512
     pad_id: int = 0  # overwritten by trainer once vocab is known
@@ -133,7 +127,7 @@ class PositionalEmbedding(nn.Module):
 
     Two reasons:
       1. Consistency with transformer-style models.  If you later swap the
-         LSTM for a transformer (Req 1.3.2 improvement), the positional
+         LSTM for a transformer, the positional
          embedding layer is already there; you just change the recurrent
          part
       2. The embedding layer concatenates token + position information
