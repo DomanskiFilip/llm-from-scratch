@@ -1,7 +1,4 @@
 """
-evaluate.py — Evaluation, Metrics & Insights
-=================================================
-
 WHAT THIS FILE DOES
 -------------------
 1. Loads a trained checkpoint from train.py
@@ -15,12 +12,7 @@ WHAT THIS FILE DOES
      - Model strengths
      - Model limitations
      - Recommended improvements (BERT / transformer path)
-
-REQUIREMENT COVERAGE
---------------------
-  ✓ Req 1.3.1 — confusion matrix, accuracy, precision, recall, loss curves
-  ✓ Req 1.3.2 — strengths, limitations, areas for improvement (transformers/BERT)
-
+     
 METRICS EXPLAINED
 -----------------
 
@@ -92,8 +84,6 @@ TOP_K_TOKENS = 50
 
 
 # Load checkpoint
-
-
 def load_checkpoint(ckpt_path: Path, device: torch.device):
     """Load a checkpoint saved by train.py and return (model, metadata)."""
     ckpt = torch.load(ckpt_path, map_location=device)
@@ -110,8 +100,6 @@ def load_checkpoint(ckpt_path: Path, device: torch.device):
 
 
 # 1. Loss curves
-
-
 def plot_loss_curves(log_csv_path: Path, out_path: Path) -> None:
     """
     Read the CSV log written by train.py and plot train vs val loss
@@ -182,8 +170,6 @@ def plot_loss_curves(log_csv_path: Path, out_path: Path) -> None:
 
 
 # 2. Collect predictions
-
-
 @torch.no_grad()
 def collect_predictions(
     model: CodingLM,
@@ -239,8 +225,6 @@ def collect_predictions(
 
 
 # 3. Compute scalar metrics
-
-
 def compute_metrics(preds: dict) -> dict:
     """Compute perplexity, top-1 accuracy, top-5 accuracy (approx from top-1)."""
     targets = preds["targets"]
@@ -262,8 +246,6 @@ def compute_metrics(preds: dict) -> dict:
 
 
 # 4. Confusion matrix (top K tokens)
-
-
 def plot_confusion_matrix(
     preds: dict,
     token_names: list,
@@ -324,8 +306,6 @@ def plot_confusion_matrix(
 
 
 # 5. Precision / Recall / F1 (top K tokens)
-
-
 def compute_prf(preds: dict, top_k: int = TOP_K_TOKENS) -> str:
     """
     Compute precision, recall, and F1 for the top_k most frequent tokens.
@@ -348,8 +328,6 @@ def compute_prf(preds: dict, top_k: int = TOP_K_TOKENS) -> str:
     )
     return report
 
-
-# 6. Written insights report (Req 1.3.2)
 
 INSIGHTS_TEMPLATE = """
 CODING LLM — EVALUATION INSIGHTS REPORT
@@ -512,12 +490,12 @@ def main(config: Config) -> None:
     device = get_device(args.device)
     ckpt_path = Path(args.ckpt)
 
-    # 1. Load model
+    # Load model
     model, ckpt = load_checkpoint(ckpt_path, device)
     cfg_dict = ckpt["train_cfg"]
     vocab_size = model.config.vocab_size
 
-    # 2. Loss curves — find the matching log CSV
+    # Loss curves find the matching log CSV
     run_name = ckpt.get("run_name", "default_run")
     log_csv = Path("logs") / f"{run_name}.csv"
     if log_csv.exists():
@@ -525,7 +503,7 @@ def main(config: Config) -> None:
     else:
         print(f"  Log CSV not found at {log_csv} — skipping loss curves.")
 
-    # 3. Build val dataloader
+    # Build val dataloader
     from train import TrainConfig, build_dataloaders
 
     train_cfg = TrainConfig(
@@ -535,18 +513,18 @@ def main(config: Config) -> None:
     )
     _, val_loader = build_dataloaders(train_cfg, device.type)
 
-    # 4. Collect predictions
+    # Collect predictions
     preds = collect_predictions(
         model, val_loader, device, vocab_size, max_batches=args.batches
     )
 
-    # 5. Scalar metrics
+    # Scalar metrics
     metrics = compute_metrics(preds)
     print("\nMetrics:")
     for k, v in metrics.items():
         print(f"  {k:20s}: {v:.4f}" if isinstance(v, float) else f"  {k:20s}: {v}")
 
-    # 6. Confusion matrix
+    # Confusion matrix
     # Load vocab for token display names
     token_names = []
     if TOKENISER_JSON.exists():
@@ -556,19 +534,19 @@ def main(config: Config) -> None:
         token_names = [tok.id_to_token(i) or "" for i in range(vocab_size)]
     plot_confusion_matrix(preds, token_names, EVAL_DIR / "confusion_matrix.png")
 
-    # 7. Precision / Recall / F1
+    # Precision / Recall / F1
     prf_report = compute_prf(preds)
     prf_path = EVAL_DIR / "precision_recall_f1.txt"
     with open(prf_path, "w") as f:
         f.write(prf_report)
     print(f"  PRF report saved → {prf_path}")
 
-    # 8. Full metrics JSON
+    # Full metrics JSON
     metrics_path = EVAL_DIR / "metrics.json"
     with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)
 
-    # 9. Insights report
+    # Insights report
     write_insights(metrics, str(ckpt_path), EVAL_DIR / "insights_report.txt")
 
     print(f"\nAll evaluation outputs saved to {EVAL_DIR}/")

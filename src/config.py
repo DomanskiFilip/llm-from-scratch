@@ -47,8 +47,8 @@ class Config:
 
     # ── Tokeniser ────────────────────────────────────────────────────────────
     tokenizer_vocab_size: int = 8192
-    tokenizer_train_sample_lines: int = 200_000
-    tokenizer_tokens_per_shard: int = 10_000_000
+    tokenizer_train_sample_lines: int = 200000
+    tokenizer_tokens_per_shard: int = 10000000
     tokenizer_special_tokens: list[str] = field(
         default_factory=lambda: [
             "<|endoftext|>",

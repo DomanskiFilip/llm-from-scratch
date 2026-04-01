@@ -123,7 +123,7 @@ EMBED_DIR.mkdir(parents=True, exist_ok=True)
 
 TOKENISER_JSON = MODEL_DIR / "qwen_style.json"
 GLOVE_ZIP = EMBED_DIR / "glove.6B.zip"
-GLOVE_TXT = EMBED_DIR / "glove.6B.100d.txt"
+GLOVE_TXT = EMBED_DIR / f"glove.6B.{Config.embedding_dim}d.txt"
 GLOVE_ALIGNED = EMBED_DIR / "glove_aligned.pt"  # final weight matrix
 COVERAGE_LOG = EMBED_DIR / "alignment_coverage.txt"
 
@@ -149,9 +149,10 @@ def extract_glove(zip_path: Path, txt_path: Path) -> None:
     if txt_path.exists():
         print(f"  {txt_path.name} already extracted — skipping.")
         return
+    target_inside_zip = txt_path.name
     print(f"  Extracting {txt_path.name} from {zip_path.name} …")
     with zipfile.ZipFile(zip_path) as zf:
-        with zf.open("glove.6B.100d.txt") as src, open(txt_path, "wb") as dst:
+        with zf.open(target_inside_zip) as src, open(txt_path, "wb") as dst:
             dst.write(src.read())
 
 
