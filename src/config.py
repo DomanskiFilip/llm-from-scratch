@@ -17,25 +17,25 @@ class Config:
     pad_id: int = 0
 
     # Training Parameters
-    seq_len: int = 300             # context window fed to the model each step
-    bptt_len: int = 64             # TBPTT chunk length
-    lr: float = 5e-4              # peak AdamW learning rate
+    seq_len: int = 128             # context window fed to the model each step
+    bptt_len: int = 32             # TBPTT chunk length
+    lr: float = 1e-3              # peak AdamW learning rate
     weight_decay: float = 0.1
     clip_norm: float = 1.0        # gradient clipping
     warmup_steps: int = 300       # linear LR warm-up steps
     epochs: int = 30
-    batch_size: int = 64
+    batch_size: int = 32
     val_fraction: float = 0.05    # fraction of shards held out for validation
     log_every: int = 100          # print loss every N batches
 
     # Regularisation
-    dropout_rate: float = 0.15    # applied to embed_drop, lstm_drop, out_drop
+    dropout_rate: float = 0.05    # applied to embed_drop, lstm_drop, out_drop
 
     # Hardware
     device: str = "auto"          # "auto" → CUDA > MPS > CPU
 
     # Early Stopping 
-    patience: int = 5
+    patience: int = 20
     min_delta: float = 1e-4
 
     # Grid Search 
