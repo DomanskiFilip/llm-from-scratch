@@ -11,15 +11,15 @@ class Config:
     # It also MUST equal embedding_dim (GloVe dim) so the pretrained matrix
     # loads without shape errors.  We use 100 to match GloVe-100d.
     # If you want a larger model, switch to GloVe-300d and set all three to 300.
-    embed_dim: int = 256
-    hidden_dim: int = 256         # keep equal to embed_dim for weight tying
+    embed_dim: int = 300
+    hidden_dim: int = 300         # keep equal to embed_dim for weight tying
     n_layers: int = 3
     tie_weights: bool = True       # only valid when embed_dim == hidden_dim
     max_seq_len: int = 512
     pad_id: int = 0
 
     # ── Training Parameters ───────────────────────────────────────────────────
-    seq_len: int = 256             # context window fed to the model each step
+    seq_len: int = 300             # context window fed to the model each step
     bptt_len: int = 64             # TBPTT chunk length
     lr: float = 5e-4              # peak AdamW learning rate
     weight_decay: float = 0.1
@@ -66,7 +66,7 @@ class Config:
     # embedding_dim MUST match embed_dim above.
     # GloVe-100d → embedding_dim = 100  (default, ~347 MB zip)
     # GloVe-300d → embedding_dim = 300  (change embed_dim/hidden_dim too)
-    embedding_dim: int = 100
+    embedding_dim: int = 300
     embedding_glove_url: str = "https://nlp.stanford.edu/data/glove.6B.zip"
     random_seed: int = 42
 
