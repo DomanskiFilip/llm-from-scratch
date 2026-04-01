@@ -77,6 +77,8 @@ from sklearn.metrics import (
 from tqdm import tqdm
 from train import get_device
 
+from src.config import Config
+
 # Paths
 DATA_DIR = Path("data")
 LOG_DIR = Path("logs")
@@ -491,7 +493,7 @@ def write_insights(metrics: dict, ckpt_path: str, out_path: Path) -> None:
 
 
 # Entry point
-def main() -> None:
+def main(config: Config) -> None:
     parser = argparse.ArgumentParser(
         description="Evaluate a trained CodingLM checkpoint"
     )
@@ -574,4 +576,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    config = Config()
+    main(config)

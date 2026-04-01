@@ -80,6 +80,8 @@ from tokenizers import (
 from tokenizers.pre_tokenizers import ByteLevel, Sequence, Split
 from tqdm import tqdm
 
+from src.config import Config
+
 # Paths
 
 DATA_DIR = Path("data")
@@ -93,11 +95,6 @@ VOCAB_TXT = MODEL_DIR / "vocab.txt"
 
 
 # Hyperparameters
-
-
-VOCAB_SIZE = 8192
-TRAIN_SAMPLE_LINES = 200000
-TOKENS_PER_SHARD = 10000000
 
 
 # [QWEN-2] Pre-tokenisation regex — identical to GPT-4's cl100k_base
@@ -115,18 +112,6 @@ _PAT = regex.compile(QWEN_REGEX_PATTERN)
 
 
 # [QWEN-4] Special tokens (ChatML set)
-
-SPECIAL_TOKENS = [
-    "<|endoftext|>",
-    "<|im_start|>",
-    "<|im_end|>",
-    "<|fim_prefix|>",
-    "<|fim_suffix|>",
-    "<|fim_middle|>",
-    "<|pad|>",
-]
-
-EOT_TOKEN = "<|endoftext|>"
 
 
 # Text cleaning
@@ -167,7 +152,8 @@ def iter_texts(
                     return
 
 
-def interleaved_texts(sample: int = TRAIN_SAMPLE_LINES) -> Generator[str, None, None]:
+def interleaved_texts(config: Config) -> Generator[str, None, None]:
+    sample = config.tokenizer_train_sample_lines
     """
     Yield texts for BPE training from all available datasets.
 
@@ -197,7 +183,7 @@ def interleaved_texts(sample: int = TRAIN_SAMPLE_LINES) -> Generator[str, None, 
 
 
 # Tokeniser construction
-def build_tokeniser() -> Tokenizer:
+def build_tokeniser(config: Config) -> Tokenizer:
     """
     Construct and train a Byte-level BPE tokeniser in the Qwen style.
     """
@@ -217,18 +203,20 @@ def build_tokeniser() -> Tokenizer:
     tokeniser.decoder = decoders.ByteLevel(add_prefix_space=False)
 
     trainer = trainers.BpeTrainer(
-        vocab_size=VOCAB_SIZE,
+        vocab_size=config.tokenizer_vocab_size,
         min_frequency=2,
-        special_tokens=SPECIAL_TOKENS,
+        special_tokens=config.tokenizer_special_tokens,
         initial_alphabet=pre_tokenizers.ByteLevel.alphabet(),
         show_progress=True,
     )
 
-    print(f"\nTraining BPE tokeniser (vocab_size={VOCAB_SIZE}) …")
-    print(f"  Sampling up to {TRAIN_SAMPLE_LINES:,} lines from each dataset.")
+    print(f"\nTraining BPE tokeniser (vocab_size={config.tokenizer_vocab_size}) …")
+    print(
+        f"  Sampling up to {config.tokenizer_train_sample_lines:,} lines from each dataset."
+    )
 
     tokeniser.train_from_iterator(
-        interleaved_texts(sample=TRAIN_SAMPLE_LINES),
+        interleaved_texts(config),
         trainer=trainer,
     )
 
@@ -237,10 +225,10 @@ def build_tokeniser() -> Tokenizer:
 
 
 # Encoding helpers
-def encode_with_eot(tokeniser: Tokenizer, text: str) -> list[int]:
+def encode_with_eot(tokeniser: Tokenizer, text: str, config: Config) -> list[int]:
     """Encode a single document and append the <|endoftext|> boundary token."""
     ids = tokeniser.encode(text).ids
-    eot_id = tokeniser.token_to_id(EOT_TOKEN)
+    eot_id = tokeniser.token_to_id(config.tokenizer_eot_token)
     ids.append(eot_id)
     return ids
 
@@ -257,8 +245,9 @@ def encode_dataset(
     tokeniser: Tokenizer,
     jsonl_path: Path,
     out_prefix: str,
-    shard_size: int = TOKENS_PER_SHARD,
+    config: Config,
 ) -> None:
+    shard_size = config.tokenizer_tokens_per_shard
     """
     Encode every document in a .jsonl file and write binary shards.
     Skips gracefully if the file does not exist.
@@ -276,7 +265,7 @@ def encode_dataset(
 
     with tqdm(desc=f"Encoding {jsonl_path.name}", unit=" docs") as pbar:
         for text in iter_texts(jsonl_path):
-            ids = encode_with_eot(tokeniser, text)
+            ids = encode_with_eot(tokeniser, text, config)
             buf.extend(ids)
             total += len(ids)
             pbar.set_postfix(tokens=f"{total / 1e6:.1f}M", shards=shard_idx + 1)
@@ -307,7 +296,7 @@ def save_vocab_txt(tokeniser: Tokenizer) -> None:
 
 
 # Entry point
-def main() -> None:
+def main(config: Config) -> None:
     parser = argparse.ArgumentParser(
         description="Train and/or run Qwen-style BPE tokeniser"
     )
@@ -322,15 +311,15 @@ def main() -> None:
         print(f"Loading tokeniser from {TOKENISER_JSON} …")
         tokeniser = Tokenizer.from_file(str(TOKENISER_JSON))
     else:
-        tokeniser = build_tokeniser()
+        tokeniser = build_tokeniser(config)
         tokeniser.save(str(TOKENISER_JSON))
         print(f"\nTokeniser saved to {TOKENISER_JSON}")
         save_vocab_txt(tokeniser)
 
     print("\nEncoding datasets into binary shards …")
-    encode_dataset(tokeniser, ALPACA_JSONL, "alpaca")
+    encode_dataset(tokeniser, ALPACA_JSONL, "alpaca", config)
     encode_dataset(
-        tokeniser, PYTHON_CODE_JSONL, "python_code_instructions"
+        tokeniser, PYTHON_CODE_JSONL, "python_code_instructions", config
     )  # skipped if missing
 
     print("\nDone!  Shards are in data/")
@@ -338,4 +327,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    config = Config()
+    main(config)

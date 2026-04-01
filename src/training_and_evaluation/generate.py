@@ -53,6 +53,8 @@ sys.path.append(str(Path(__file__).parent))
 from model import CodingLM, LMConfig
 from train import get_device
 
+from src.config import Config
+
 TOKENISER_JSON = Path("tokeniser") / "qwen_style.json"
 
 
@@ -229,7 +231,7 @@ def interactive_loop(model, tokeniser, eot_id, device: torch.device) -> None:
 
 
 # Entry point
-def main() -> None:
+def main(config: Config) -> None:
     parser = argparse.ArgumentParser(
         description="Generate code with a trained CodingLM"
     )
@@ -274,4 +276,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    config = Config()
+    main(config)

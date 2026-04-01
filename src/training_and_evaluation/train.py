@@ -61,10 +61,10 @@ CROSS-ENTROPY LOSS
 """
 
 import argparse
-import sys
 import csv
 import json
 import math
+import sys
 import time
 from dataclasses import asdict, dataclass
 from itertools import product
@@ -77,10 +77,11 @@ import torch.nn as nn
 from torch.optim.lr_scheduler import LambdaLR
 from tqdm import tqdm
 
-
 sys.path.append(str(Path(__file__).parent))
 
 from model import CodingLM, LMConfig
+
+from src.config import Config
 
 # Paths
 DATA_DIR = Path("data")
@@ -93,44 +94,60 @@ GLOVE_PT = Path("embeddings") / "glove_aligned.pt"
 
 
 # Training configuration
+# Use the project-wide Config defaults as the source-of-truth for training
+# hyperparameters. This keeps one place (src.config.Config) as the single
+# source of truth while still allowing TrainConfig to be used for CLI/grid
+# overrides and to be passed around within the training code.
+_config_defaults = Config()
+
+
 @dataclass
 class TrainConfig:
     """
-    All training hyperparameters
+    All training hyperparameters.
 
-    These are the values used for the *default* single run
-    The grid search overrides lr, batch_size, and dropout_rate
+    Default values are taken from src.config.Config so there's one canonical
+    place for hyperparameter defaults (the Config dataclass). TrainConfig is
+    kept as a small wrapper used by the training scripts and grid search.
+    The grid search still overrides lr, batch_size and dropout_rate as before.
     """
 
     # --- Data ---
-    seq_len: int = 256  # tokens per training example (context window)
-    bptt_len: int = 64  # TBPTT chunk length (how far back gradients flow)
+    seq_len: int = (
+        _config_defaults.seq_len
+    )  # tokens per training example (context window)
+    bptt_len: int = (
+        _config_defaults.bptt_len
+    )  # TBPTT chunk length (how far back gradients flow)
 
     # --- Optimisation ---
-    lr: float = 5e-4  # peak learning rate for AdamW
-    weight_decay: float = 0.1  # AdamW weight decay
-    clip_norm: float = 1.0  # gradient clipping norm
-    warmup_steps: int = 300  # linear LR warmup steps
+    lr: float = _config_defaults.lr  # peak learning rate for AdamW
+    weight_decay: float = _config_defaults.weight_decay  # AdamW weight decay
+    clip_norm: float = _config_defaults.clip_norm  # gradient clipping norm
+    warmup_steps: int = _config_defaults.warmup_steps  # linear LR warmup steps
 
     # --- Schedule ---
-    epochs: int = 30
-    batch_size: int = 64
-
-    # --- Regularisation ---
-    dropout_rate: float = 0.15  # applied to embed_drop, lstm_drop, out_drop
-
-    # --- Early stopping ---
-    patience: int = 5  # stop if val loss doesn't improve for this many epochs
-    min_delta: float = 1e-4  # minimum improvement to count as improvement
+    epochs: int = _config_defaults.epochs
+    batch_size: int = _config_defaults.batch_size
 
     # --- Hardware ---
-    device: str = "auto"  # "auto" picks CUDA > MPS > CPU
+    device: str = _config_defaults.device  # "auto" picks CUDA > MPS > CPU
 
     # --- Data split ---
-    val_fraction: float = 0.05  # fraction of shards reserved for validation
+    val_fraction: float = (
+        _config_defaults.val_fraction
+    )  # fraction of shards reserved for validation
 
     # --- Logging ---
-    log_every: int = 100  # log loss every N batches
+    log_every: int = _config_defaults.log_every  # log loss every N batches
+
+    # --- Regularisation / searchable ---
+    # Keep dropout_rate here as it's overridden in the grid search
+    dropout_rate: float = _config_defaults.dropout_rate
+
+    # --- Early stopping (defaults from Config) ---
+    patience: int = _config_defaults.patience
+    min_delta: float = _config_defaults.min_delta
 
 
 # Grid search space
@@ -143,8 +160,8 @@ GRID = {
 # For a full search, every combination is tried.
 # 3 × 2 × 2 = 12 runs.  Each run trains for `grid_epochs` epochs only to
 # keep the search affordable; the best config is then trained to convergence.
-GRID_EPOCHS = 3  # short runs for the search
-FULL_EPOCHS = 30  # full run with the best config
+GRID_EPOCHS = _config_defaults.grid_epochs   # short runs for the search
+FULL_EPOCHS = _config_defaults.full_epochs   # full run with the best config
 
 
 # Device selection
@@ -318,23 +335,30 @@ def run_training(
     device = get_device(cfg.device)
     print(f"\n{'=' * 60}")
     print(f"Run: {run_name}")
-    print(f"  device={device}  lr={cfg.lr}  batch={cfg.batch_size}  dropout={cfg.dropout_rate}")
+    print(
+        f"  device={device}  lr={cfg.lr}  batch={cfg.batch_size}  dropout={cfg.dropout_rate}"
+    )
     print(f"{'=' * 60}")
 
     epochs = max_epochs if max_epochs is not None else cfg.epochs
 
     # Build model
+    # Use the canonical defaults from src.config.Config (created above as
+    # _config_defaults) for model-level hyperparameters. The TrainConfig
+    # controls training-run-specific values (batch size, lr, dropout overrides).
     model_cfg = LMConfig(
-        vocab_size=8_192,
-        embed_dim=256,
-        hidden_dim=256,
-        n_layers=3,
-        embed_drop=cfg.dropout_rate,
+        vocab_size=_config_defaults.vocab_size,
+        embed_dim=_config_defaults.embed_dim,
+        hidden_dim=_config_defaults.hidden_dim,
+        n_layers=_config_defaults.n_layers,
+        embed_drop=cfg.dropout_rate,  # training-time dropout comes from TrainConfig
         lstm_drop=cfg.dropout_rate,
         out_drop=cfg.dropout_rate,
-        tie_weights=True,
-        max_seq_len=cfg.seq_len + 64,
-        pad_id=6,
+        tie_weights=_config_defaults.tie_weights,
+        # Keep max_seq_len consistent with global config but ensure model has
+        # a slightly larger positional buffer than the training seq_len
+        max_seq_len=min(_config_defaults.max_seq_len, cfg.seq_len + 64),
+        pad_id=_config_defaults.pad_id,
     )
 
     pretrained = None
@@ -440,7 +464,9 @@ def run_training(
 
             if (step + 1) % cfg.log_every == 0:
                 cur_lr = scheduler.get_last_lr()[0]
-                print(f"  e{epoch} step {step + 1:5d}  loss={batch_loss:.4f}  lr={cur_lr:.2e}")
+                print(
+                    f"  e{epoch} step {step + 1:5d}  loss={batch_loss:.4f}  lr={cur_lr:.2e}"
+                )
 
         avg_train_loss = epoch_loss / max(step_count, 1)
         train_losses.append(avg_train_loss)
@@ -462,8 +488,14 @@ def run_training(
         # Append to log (don't overwrite existing rows)
         with open(log_path, "a", newline="") as f:
             csv.writer(f).writerow(
-                [epoch, step_count, avg_train_loss, val_loss,
-                 scheduler.get_last_lr()[0], perplexity]
+                [
+                    epoch,
+                    step_count,
+                    avg_train_loss,
+                    val_loss,
+                    scheduler.get_last_lr()[0],
+                    perplexity,
+                ]
             )
 
         # Save best checkpoint
@@ -485,7 +517,9 @@ def run_training(
 
         # Early stopping
         if early_stop.step(val_loss):
-            print(f"  Early stopping triggered after {epoch} epochs (patience={cfg.patience})")
+            print(
+                f"  Early stopping triggered after {epoch} epochs (patience={cfg.patience})"
+            )
             break
 
     return {
@@ -588,19 +622,19 @@ def run_grid_search(base_cfg: TrainConfig) -> TrainConfig:
 
 
 # Entry point
-def main() -> None:
+def main(config: Config) -> None:
     parser = argparse.ArgumentParser(description="Train CodingLM")
     parser.add_argument(
         "--grid-search",
         action="store_true",
         help="Run grid search before final training",
     )
-    parser.add_argument("--lr", type=float, default=3e-4)
-    parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--dropout", type=float, default=0.2)
-    parser.add_argument("--epochs", type=int, default=20)
-    parser.add_argument("--seq-len", type=int, default=256)
-    parser.add_argument("--device", type=str, default="auto")
+    parser.add_argument("--lr", type=float, default=None)
+    parser.add_argument("--batch-size", type=int, default=None)
+    parser.add_argument("--dropout", type=float, default=None)
+    parser.add_argument("--epochs", type=int, default=None)
+    parser.add_argument("--seq-len", type=int, default=None)
+    parser.add_argument("--device", type=str, default=None)
     parser.add_argument(
         "--no-glove",
         action="store_true",
@@ -608,13 +642,16 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # Use config values, but allow CLI args to override
     base_cfg = TrainConfig(
-        lr=args.lr,
-        batch_size=args.batch_size,
-        dropout_rate=args.dropout,
-        epochs=args.epochs,
-        seq_len=args.seq_len,
-        device=args.device,
+        lr=args.lr if args.lr is not None else config.lr,
+        batch_size=args.batch_size
+        if args.batch_size is not None
+        else config.batch_size,
+        dropout_rate=args.dropout if args.dropout is not None else config.dropout_rate,
+        epochs=args.epochs if args.epochs is not None else config.epochs,
+        seq_len=args.seq_len if args.seq_len is not None else config.seq_len,
+        device=args.device if args.device is not None else config.device,
     )
 
     if args.grid_search:
@@ -637,4 +674,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    config = Config()
+    main(config)

@@ -1,6 +1,8 @@
 import argparse
 import sys
 
+from src.config import Config
+
 
 def main():
     parser = argparse.ArgumentParser(prog="coding-llm")
@@ -14,6 +16,9 @@ def main():
     sub.add_parser("generate", help="Generate code completions")
 
     args, remaining = parser.parse_known_args()
+
+    # Load configuration
+    config = Config()
 
     if args.command == "download":
         from dataset_procesing.download import main as run
@@ -31,8 +36,9 @@ def main():
         parser.print_help()
         sys.exit(0)
 
+    # Pass the loaded configuration to the respective main functions
     sys.argv = [sys.argv[0]] + remaining
-    run()
+    run(config)
 
 
 if __name__ == "__main__":

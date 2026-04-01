@@ -113,6 +113,8 @@ import torch
 from tokenizers import Tokenizer
 from tqdm import tqdm
 
+from src.config import Config
+
 # Paths
 DATA_DIR = Path("data")
 MODEL_DIR = Path("tokeniser")
@@ -124,12 +126,6 @@ GLOVE_ZIP = EMBED_DIR / "glove.6B.zip"
 GLOVE_TXT = EMBED_DIR / "glove.6B.100d.txt"
 GLOVE_ALIGNED = EMBED_DIR / "glove_aligned.pt"  # final weight matrix
 COVERAGE_LOG = EMBED_DIR / "alignment_coverage.txt"
-
-
-# Configuration
-GLOVE_URL = "https://nlp.stanford.edu/data/glove.6B.zip"  # 822 MB zip
-EMBED_DIM = 100  # GloVe-100d — change to 200/300 if you download those
-RANDOM_SEED = 42
 
 
 # Download helpers
@@ -183,7 +179,7 @@ def load_glove(txt_path: Path) -> Dict[str, np.ndarray]:
             word = parts[0]
             vec = np.array(parts[1:], dtype=np.float32)
             glove[word] = vec
-    print(f"  Loaded {len(glove):,} GloVe vectors (dim={EMBED_DIM})")
+    print(f"  Loaded {len(glove):,} GloVe vectors")
     return glove
 
 
@@ -236,7 +232,7 @@ def bpe_token_to_text(token: str) -> str:
 def align_to_bpe(
     tokeniser: Tokenizer,
     glove: Dict[str, np.ndarray],
-    embed_dim: int,
+    config: Config,
 ) -> Tuple[np.ndarray, dict]:
     """
     Build a [VOCAB_SIZE, EMBED_DIM] weight matrix aligned to the BPE vocab.
@@ -256,9 +252,11 @@ def align_to_bpe(
 
     # Compute the standard deviation of GloVe vectors for random init
     glove_std = float(np.std(np.stack(list(glove.values()))))
-    rng = np.random.default_rng(RANDOM_SEED)
+    rng = np.random.default_rng(config.random_seed)
 
-    weight = rng.normal(0.0, glove_std, size=(vocab_size, embed_dim)).astype(np.float32)
+    weight = rng.normal(0.0, glove_std, size=(vocab_size, config.embedding_dim)).astype(
+        np.float32
+    )
 
     stats = {"exact": 0, "lower": 0, "subword_avg": 0, "random": 0, "special": 0}
 
@@ -268,15 +266,7 @@ def align_to_bpe(
     print(f"  Aligning {vocab_size:,} BPE tokens to GloVe …")
     for token_str, token_id in tqdm(vocab.items(), total=vocab_size):
         # --- Special tokens: leave at random init, mark separately -------
-        if token_str in (
-            "<|endoftext|>",
-            "<|im_start|>",
-            "<|im_end|>",
-            "<|fim_prefix|>",
-            "<|fim_suffix|>",
-            "<|fim_middle|>",
-            "<|pad|>",
-        ):
+        if token_str in config.tokenizer_special_tokens:
             stats["special"] += 1
             continue
 
@@ -315,18 +305,16 @@ def align_to_bpe(
 
 
 # Main
+def main(config: Config) -> None:
 
-
-def main() -> None:
-
-    # 1. Download & extract GloVe
-    download_file(GLOVE_URL, GLOVE_ZIP)
+    # Download & extract GloVe
+    download_file(config.embedding_glove_url, GLOVE_ZIP)
     extract_glove(GLOVE_ZIP, GLOVE_TXT)
 
-    # 2. Load GloVe
+    # Load GloVe
     glove = load_glove(GLOVE_TXT)
 
-    # 3. Load our BPE tokeniser
+    # Load our BPE tokeniser
     if not TOKENISER_JSON.exists():
         raise FileNotFoundError(
             f"{TOKENISER_JSON} not found.  Run 02_tokeniser.py first."
@@ -334,16 +322,16 @@ def main() -> None:
     print(f"  Loading tokeniser from {TOKENISER_JSON} …")
     tokeniser = Tokenizer.from_file(str(TOKENISER_JSON))
 
-    # 4. Align
+    # Align
     print("\nAligning BPE vocabulary to GloVe vectors …")
-    weight, stats = align_to_bpe(tokeniser, glove, EMBED_DIM)
+    weight, stats = align_to_bpe(tokeniser, glove, config)
 
-    # 5. Save
+    # Save
     torch.save(torch.from_numpy(weight), GLOVE_ALIGNED)
     print(f"\n  Saved aligned weight matrix → {GLOVE_ALIGNED}")
     print(f"  Shape: {weight.shape}  dtype: {weight.dtype}")
 
-    # 6. Coverage report
+    # Coverage report
     vocab_size = tokeniser.get_vocab_size()
     total_regular = vocab_size - stats["special"]
     covered = stats["exact"] + stats["lower"] + stats["subword_avg"]
@@ -384,7 +372,7 @@ def main() -> None:
         f.write(report)
     print(f"  Report saved → {COVERAGE_LOG}")
 
-    # 7. Quick sanity check
+    # Quick sanity check
     print("\nSanity check — nearest GloVe neighbours for 'def' and 'return':")
     for probe in ["def", "return", "class"]:
         probe_id = tokeniser.token_to_id("Ġ" + probe)  # Ġ = space prefix
@@ -403,4 +391,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    config = Config()
+    main(config)

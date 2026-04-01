@@ -5,6 +5,8 @@ from pathlib import Path
 from datasets import load_dataset
 from tqdm import tqdm
 
+from src.config import Config
+
 # Configuration
 OUTPUT_DIR = Path("data")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -152,6 +154,7 @@ def download_python_code_instructions() -> int:
     log.info("Total code examples written: %d → %s", total_kept, out_path)
     return total_kept
 
+
 #  Summary / stats
 def print_stats() -> None:
     log.info("=== Dataset Summary ===")
@@ -176,8 +179,9 @@ def print_stats() -> None:
             for lang, cnt in lang_counts.most_common():
                 log.info("    %-20s %d", lang, cnt)
 
+
 # Entry point
-def main():
+def main(config: Config) -> None:
     log.info("Starting dataset preparation...")
     log.info("Output directory: %s", OUTPUT_DIR.resolve())
 
@@ -197,4 +201,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    config = Config()
+    main(config)
