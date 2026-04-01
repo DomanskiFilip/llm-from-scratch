@@ -8,6 +8,8 @@
 /logs
 */checkpoints
 /checkpoints
+/evaluation
+*/evaluation/*
 */venv
 /venv
 /__pycache__
