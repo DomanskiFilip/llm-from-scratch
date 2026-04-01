@@ -398,11 +398,20 @@ def run_training(
     log_path = LOG_DIR / f"{run_name}.csv"
     ckpt_path = CKPT_DIR / f"{run_name}_best.pt"
 
-    # ── Resume from checkpoint if available ──────────────────────────────
+    # Resume from checkpoint if available
     start_epoch = 1
     best_val_loss = float("inf")
     train_losses, val_losses = [], []
-
+    
+    if ckpt_path.exists():
+            print(f"  Resuming from {ckpt_path} …")
+            ckpt = torch.load(ckpt_path, map_location=device)
+            
+            validate_checkpoint_architecture(model, ckpt, ckpt_path)
+    
+            model.load_state_dict(ckpt["model_state"])
+            optimiser.load_state_dict(ckpt["optim_state"])
+            
     if ckpt_path.exists():
         print(f"  Resuming from {ckpt_path} …")
         ckpt = torch.load(ckpt_path, map_location=device)
@@ -421,7 +430,7 @@ def run_training(
     early_stop = EarlyStopping(patience=cfg.patience, min_delta=cfg.min_delta)
     early_stop.best_loss = best_val_loss  # sync early stopping with resumed state
 
-    # ── Epoch loop ────────────────────────────────────────────────────────
+    #  Epoch loop 
     for epoch in range(start_epoch, epochs + 1):
         # --- Train ---
         model.train()
@@ -531,6 +540,44 @@ def run_training(
         "ckpt_path": str(ckpt_path),
         "config": asdict(cfg),
     }
+
+
+def validate_checkpoint_architecture(model, ckpt, ckpt_path):
+    """
+    Compares the model's expected shapes with the checkpoint's saved shapes.
+    Provides a human-readable error instead of a stack trace.
+    """
+    model_state = model.state_dict()
+    ckpt_state = ckpt["model_state"]
+    
+    # We check the embedding layer and the output head as they are 
+    # the most common points of failure for vocab/dimension changes.
+    layers_to_check = {
+        "tok_embed.weight": "Vocabulary/Embedding Size",
+        "lstm.weight_ih_l0": "Input/Hidden Size",
+        "head.weight": "Output Vocabulary Size"
+    }
+    
+    mismatches = []
+    for key, name in layers_to_check.items():
+        if key in model_state and key in ckpt_state:
+            m_shape = tuple(model_state[key].shape)
+            c_shape = tuple(ckpt_state[key].shape)
+            if m_shape != c_shape:
+                mismatches.append(f"  - {name} ({key}): Current {m_shape} vs Checkpoint {c_shape}")
+
+    if mismatches:
+        print("\n" + "!"*60)
+        print("ERROR: ARCHITECTURE MISMATCH")
+        print("!"*60)
+        print(f"The checkpoint '{ckpt_path}' is incompatible with your current config.")
+        print("\nDifferences detected:")
+        print("\n".join(mismatches))
+        print("\nHOW TO FIX:")
+        print(f"1. Delete or rename the file: {ckpt_path}")
+        print("2. Or change your Config (vocab_size, hidden_dim, etc.) to match the checkpoint.")
+        print("!"*60 + "\n")
+        sys.exit(1)
 
 
 # Validation loop
