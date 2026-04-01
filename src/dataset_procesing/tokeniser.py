@@ -13,7 +13,7 @@ The tokeniser here is deliberately modelled on Qwen's approach, described in:
 
   Bai et al. (2023). "Qwen Technical Report."
   arXiv:2309.16609  https://arxiv.org/abs/2309.16609
-  (Section 2.1 — Tokenisation)
+
 
 Key design decisions taken from that paper / the Qwen codebase:
 

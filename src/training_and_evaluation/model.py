@@ -1,6 +1,4 @@
 """
-model.py — LSTM Language Model Architecture
-
 WHAT THIS FILE DOES
 -------------------
 Defines the PyTorch neural network used for the coding LLM.

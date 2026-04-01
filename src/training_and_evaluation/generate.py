@@ -1,7 +1,4 @@
 """
-generate.py — Inference & Code Generation
-=============================================
-
 WHAT THIS FILE DOES
 -------------------
 Loads a trained checkpoint and generates code completions from text prompts

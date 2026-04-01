@@ -1,7 +1,4 @@
 """
-train.py — Training Loop, Hyperparameter Search & Early Stopping
-=====================================================================
-
 WHAT THIS FILE DOES
 -------------------
 1. Loads tokenised binary shards produced by tokeniser.py
@@ -10,15 +7,6 @@ WHAT THIS FILE DOES
 4. Runs a grid search over learning rate, batch size, and dropout rate
 5. Logs training/validation loss per epoch to CSV files for plotting
 6. Saves the best checkpoint for use in evaluate.py and generate.py
-
-REQUIREMENT COVERAGE
----------------------------------
-  ✓ Batch size experimentation
-  ✓ Learning rate experimentation
-  ✓ Dropout rate experimentation
-  ✓ Grid search for hyperparameter tuning
-  ✓ Early stopping
-  ✓ All attempts logged for comparison
 
 TRAINING CONCEPTS
 ----------------------------
