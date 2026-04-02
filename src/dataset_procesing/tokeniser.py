@@ -1,76 +1,12 @@
-"""
-WHAT THIS FILE DOES
--------------------
-1. Reads the .jsonl files produced by 01_download_and_filter_datasets.py
-2. Cleans and normalises the raw text (code + instruction data)
-3. Trains a Byte-level BPE vocabulary on a sample of that text
-4. Encodes the full dataset into integer token-ID sequences
-5. Saves the vocabulary, merge table, and encoded binary shards to disk
-
-REFERENCES & DESIGN CHOICES
-----------------------------
-The tokeniser here is deliberately modelled on Qwen's approach, described in:
-
-  Bai et al. (2023). "Qwen Technical Report."
-  arXiv:2309.16609  https://arxiv.org/abs/2309.16609
-
-
-Key design decisions taken from that paper / the Qwen codebase:
-
-  [QWEN-1] BYTE-LEVEL BPE
-      Qwen operates on UTF-8 bytes, not Unicode code-points.  Every possible
-      byte value 0x00–0xFF is a base token, so no text can ever produce an
-      <unk> token.  This is critical for code, which is full of unusual
-      symbols and byte sequences.
-      Source: Bai et al. 2023 §2.1; also Yang et al. 2024 "Qwen2 Technical
-      Report" arXiv:2407.10671 §2.1.
-
-  [QWEN-2] REGEX PRE-TOKENISATION
-      Before the BPE algorithm runs, text is split by a regular expression
-      into "pre-tokens" (rough word-like chunks).  BPE merges are then only
-      allowed *within* a pre-token — never across a boundary.  This prevents
-      the tokeniser learning merges like "  the" (trailing space of one word
-      fused with the next), which would waste vocabulary slots.
-      Qwen uses the same cl100k_base regex as GPT-4 (tiktoken library)
-      Source: Bai et al. 2023 §2.1; tiktoken openai_public.py cl100k_base
-
-  [QWEN-3] LARGE VOCABULARY (151,643 REGULAR TOKENS)
-      Qwen's production vocabulary has 151,643 regular BPE tokens plus 208
-      control/special tokens = 151,851 total.  A larger vocab means longer
-      tokens on average → fewer tokens per document → shorter sequences →
-      less memory at training time.  We use a smaller vocab here (32,768)
-      because we are training from scratch on limited compute
-      Source: Bai et al. 2023 §2.1; QwenLM/Qwen tokenization_note.md
-
-  [QWEN-4] SPECIAL TOKENS WITH ChatML FORMATTING
-      Qwen wraps every conversation turn with <|im_start|>role\n...<|im_end|>
-      (the ChatML format, originally from OpenAI).  We adopt the same special
-      tokens so that later fine-tuning on instruction data is straightforward
-      Source: Bai et al. 2023 §2.1
-
-  [QWEN-5] NO BOS/EOS IN THE TRADITIONAL SENSE
-      Qwen deliberately avoids a single bos/eos token.  Document boundaries
-      are marked by <|endoftext|> (ID = VOCAB_SIZE − 1 in our scheme)
-      Source: Bai et al. 2023 §2.1; QwenLM/Qwen tokenization_note.md
-
-Usage
------
-  python tokeniser.py            # train + encode
-  python tokeniser.py --encode-only  # skip training, just encode
-"""
-
-import argparse
 import json
-import os
 import re
 import struct
 import unicodedata
 from pathlib import Path
 from typing import Generator
 
-import regex  # 'regex' library supports \p{L} Unicode categories
+import regex
 from tokenizers import (
-    AddedToken,
     Tokenizer,
     decoders,
     models,
@@ -82,32 +18,24 @@ from tqdm import tqdm
 
 from src.config import Config
 
-# Paths
-
-DATA_DIR = Path("data")
+# Paths 
+DATA_DIR  = Path("data")
 MODEL_DIR = Path("tokeniser")
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 ALPACA_JSONL        = DATA_DIR / "alpaca_cleaned.jsonl"
 DOLLY_JSONL         = DATA_DIR / "dolly_15k.jsonl"
 OPEN_INSTRUCT_JSONL = DATA_DIR / "open_instruct.jsonl"
-PYTHON_CODE_JSONL   = DATA_DIR / "python_code_instructions.jsonl"
 TOKENISER_JSON      = MODEL_DIR / "qwen_style.json"
 VOCAB_TXT           = MODEL_DIR / "vocab.txt"
 
-# All datasets used for BPE training and encoding, in order
 ALL_DATASETS: list[tuple[Path, str]] = [
     (ALPACA_JSONL,        "alpaca"),
     (DOLLY_JSONL,         "dolly"),
-    (OPEN_INSTRUCT_JSONL, "open_instruct"),
-    (PYTHON_CODE_JSONL,   "python_code_instructions"),
+    (OPEN_INSTRUCT_JSONL, "open_instruct")
 ]
 
-
-# Hyperparameters
-
-
-# [QWEN-2] Pre-tokenisation regex — identical to GPT-4's cl100k_base
+# Regex (GPT-4 / Qwen cl100k_base pattern)
 QWEN_REGEX_PATTERN = (
     r"(?i:'s|'t|'re|'ve|'m|'ll|'d)"
     r"|[^\r\n\p{L}\p{N}]?\p{L}+"
@@ -121,21 +49,8 @@ QWEN_REGEX_PATTERN = (
 _PAT = regex.compile(QWEN_REGEX_PATTERN)
 
 
-# [QWEN-4] Special tokens (ChatML set)
-
-
-# Text cleaning
+# Text cleaning 
 def clean_text(text: str) -> str:
-    """
-    Lightweight text normalisation.
-
-    Steps (in order):
-      1. Unicode NFC normalisation
-      2. Remove null bytes
-      3. Strip ANSI escape codes
-      4. Collapse runs of more than 3 blank lines into 3
-      5. Strip leading/trailing whitespace
-    """
     text = unicodedata.normalize("NFC", text)
     text = text.replace("\x00", "")
     text = re.sub(r"\x1b\[[0-9;]*[mGKHF]", "", text)
@@ -143,17 +58,15 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 
-# Dataset streaming helpers
-
-
+# Streaming helpers 
 def iter_texts(
     jsonl_path: Path, max_lines: int | None = None
 ) -> Generator[str, None, None]:
-    """Yield the 'text' field from every line of a .jsonl file."""
+    """Yield clean 'text' strings for BPE training (no mask needed here)."""
     n = 0
     with open(jsonl_path, encoding="utf-8") as f:
         for line in f:
-            rec = json.loads(line)
+            rec  = json.loads(line)
             text = rec.get("text", "")
             if text:
                 yield clean_text(text)
@@ -162,26 +75,31 @@ def iter_texts(
                     return
 
 
+def iter_records(jsonl_path: Path) -> Generator[dict, None, None]:
+    """Yield full records (text + response_start_char) for encoding."""
+    with open(jsonl_path, encoding="utf-8") as f:
+        for line in f:
+            rec  = json.loads(line)
+            text = rec.get("text", "")
+            if text:
+                rec["text"] = clean_text(text)
+                yield rec
+
+
 def interleaved_texts(config: Config) -> Generator[str, None, None]:
-    """
-    Yield texts for BPE training from all available datasets, round-robining
-    so every source contributes equally to the vocabulary regardless of size.
-    Missing files are skipped with a warning.
-    """
-    sample = config.tokenizer_train_sample_lines
-    available = [(path, name) for path, name in ALL_DATASETS if path.exists()]
-    missing   = [name for path, name in ALL_DATASETS if not path.exists()]
+    sample    = config.tokenizer_train_sample_lines
+    available = [(p, n) for p, n in ALL_DATASETS if p.exists()]
+    missing   = [n for p, n in ALL_DATASETS if not p.exists()]
 
     if missing:
         print(f"  [INFO] Skipping missing datasets: {missing}")
     if not available:
         raise FileNotFoundError("No dataset files found. Run download first.")
 
-    iterators = [iter_texts(path, max_lines=sample) for path, _ in available]
-    names     = [name for _, name in available]
+    iterators = [iter_texts(p, max_lines=sample) for p, _ in available]
+    names     = [n for _, n in available]
     print(f"  Interleaving {len(available)} datasets: {names}")
 
-    # Round-robin until all iterators exhausted
     from itertools import zip_longest
     sentinel = object()
     for group in zip_longest(*iterators, fillvalue=sentinel):
@@ -192,22 +110,12 @@ def interleaved_texts(config: Config) -> Generator[str, None, None]:
 
 # Tokeniser construction
 def build_tokeniser(config: Config) -> Tokenizer:
-    """
-    Construct and train a Byte-level BPE tokeniser in the Qwen style.
-    """
     tokeniser = Tokenizer(models.BPE(byte_fallback=True, unk_token=None))
 
-    tokeniser.pre_tokenizer = Sequence(
-        [
-            Split(
-                pattern=QWEN_REGEX_PATTERN,
-                behavior="isolated",
-                invert=False,
-            ),
-            ByteLevel(add_prefix_space=False, use_regex=False),
-        ]
-    )
-
+    tokeniser.pre_tokenizer = Sequence([
+        Split(pattern=QWEN_REGEX_PATTERN, behavior="isolated", invert=False),
+        ByteLevel(add_prefix_space=False, use_regex=False),
+    ])
     tokeniser.decoder = decoders.ByteLevel(add_prefix_space=False)
 
     trainer = trainers.BpeTrainer(
@@ -219,83 +127,143 @@ def build_tokeniser(config: Config) -> Tokenizer:
     )
 
     print(f"\nTraining BPE tokeniser (vocab_size={config.tokenizer_vocab_size}) …")
-    print(
-        f"  Sampling up to {config.tokenizer_train_sample_lines:,} lines from each dataset."
-    )
+    print(f"  Sampling up to {config.tokenizer_train_sample_lines:,} lines per dataset.")
 
-    tokeniser.train_from_iterator(
-        interleaved_texts(config),
-        trainer=trainer,
-    )
-
+    tokeniser.train_from_iterator(interleaved_texts(config), trainer=trainer)
     print(f"  Vocabulary size after training: {tokeniser.get_vocab_size():,}")
     return tokeniser
 
 
-# Encoding helpers
-def encode_with_eot(tokeniser: Tokenizer, text: str, config: Config) -> list[int]:
-    """Encode a single document and append the <|endoftext|> boundary token."""
-    ids = tokeniser.encode(text).ids
+# Encoding with loss mask
+def encode_with_mask(
+    tokeniser: Tokenizer,
+    text: str,
+    response_start_char: int,
+    config: Config,
+) -> tuple[list[int], list[int]]:
+    """
+    Encode `text` and return (token_ids, loss_mask).
+
+    loss_mask[i] = 1  if token i is inside the response (train on it)
+                 = 0  if token i is part of the prompt template (ignore)
+
+    Strategy: encode the prompt prefix separately to get its token count,
+    then encode the full text.  Everything up to prompt_token_count gets
+    mask=0; the rest (response + EOT) gets mask=1.
+
+    Edge case: if response_start_char is 0 or missing, the whole sequence
+    is treated as trainable (safe fallback for plain-text data).
+    """
     eot_id = tokeniser.token_to_id(config.tokenizer_eot_token)
-    ids.append(eot_id)
-    return ids
+
+    if response_start_char > 0:
+        prompt_text    = text[:response_start_char]
+        prompt_ids     = tokeniser.encode(prompt_text).ids
+        prompt_len     = len(prompt_ids)
+    else:
+        prompt_len = 0
+
+    all_ids  = tokeniser.encode(text).ids + [eot_id]
+    mask     = [0] * min(prompt_len, len(all_ids)) + \
+               [1] * max(0, len(all_ids) - prompt_len)
+
+    # Safety: lengths must match
+    assert len(all_ids) == len(mask), "Token/mask length mismatch — should never happen"
+    return all_ids, mask
 
 
-def write_shard(ids: list[int], path: Path) -> None:
-    """Write a flat list of uint16 token IDs to a binary file."""
+# Binary shard writers 
+def write_token_shard(ids: list[int], path: Path) -> None:
+    """Write uint16 token IDs."""
     with open(path, "wb") as f:
-        for chunk_start in range(0, len(ids), 65536):
-            chunk = ids[chunk_start : chunk_start + 65536]
+        for start in range(0, len(ids), 65536):
+            chunk = ids[start : start + 65536]
             f.write(struct.pack(f"<{len(chunk)}H", *chunk))
 
 
+def write_mask_shard(mask: list[int], path: Path) -> None:
+    """Write uint8 loss mask (0 or 1 per token)."""
+    with open(path, "wb") as f:
+        f.write(bytes(mask))
+
+
+# Per-dataset encoder 
 def encode_dataset(
     tokeniser: Tokenizer,
     jsonl_path: Path,
     out_prefix: str,
     config: Config,
 ) -> None:
-    shard_size = config.tokenizer_tokens_per_shard
     """
-    Encode every document in a .jsonl file and write binary shards.
+    Encode every document in a .jsonl file into parallel token + mask shards.
     Skips gracefully if the file does not exist.
     """
     if not jsonl_path.exists():
-        print(
-            f"  [SKIP] {jsonl_path} not found — skipping encoding for '{out_prefix}'."
-        )
+        print(f"  [SKIP] {jsonl_path} not found — skipping '{out_prefix}'.")
         return
 
-    shard_idx = 0
-    buf: list[int] = []
+    shard_size = config.tokenizer_tokens_per_shard
+    shard_idx  = 0
+    tok_buf:  list[int] = []
+    mask_buf: list[int] = []
     total = 0
-    shard_path = DATA_DIR / f"{out_prefix}_shard_{shard_idx:04d}.bin"
+
+    def _flush(final: bool = False) -> None:
+        nonlocal shard_idx, tok_buf, mask_buf
+        if not tok_buf:
+            return
+        tok_path  = DATA_DIR / f"{out_prefix}_shard_{shard_idx:04d}.bin"
+        mask_path = DATA_DIR / f"{out_prefix}_shard_{shard_idx:04d}.mask.bin"
+        write_token_shard(tok_buf, tok_path)
+        write_mask_shard(mask_buf, mask_path)
+        label = "final shard" if final else f"{shard_size / 1e6:.1f}M tokens"
+        print(f"\n  Wrote {tok_path}  ({label})")
+        tok_buf  = []
+        mask_buf = []
+        shard_idx += 1
 
     with tqdm(desc=f"Encoding {jsonl_path.name}", unit=" docs") as pbar:
-        for text in iter_texts(jsonl_path):
-            ids = encode_with_eot(tokeniser, text, config)
-            buf.extend(ids)
+        for rec in iter_records(jsonl_path):
+            text = rec["text"]
+            rsc  = rec.get("response_start_char", 0)
+            ids, mask = encode_with_mask(tokeniser, text, rsc, config)
+
+            tok_buf.extend(ids)
+            mask_buf.extend(mask)
             total += len(ids)
             pbar.set_postfix(tokens=f"{total / 1e6:.1f}M", shards=shard_idx + 1)
             pbar.update(1)
 
-            while len(buf) >= shard_size:
-                write_shard(buf[:shard_size], shard_path)
-                print(f"\n  Wrote {shard_path}  ({shard_size / 1e6:.1f}M tokens)")
-                buf = buf[shard_size:]
+            while len(tok_buf) >= shard_size:
+                write_token_shard(tok_buf[:shard_size],  DATA_DIR / f"{out_prefix}_shard_{shard_idx:04d}.bin")
+                write_mask_shard( mask_buf[:shard_size], DATA_DIR / f"{out_prefix}_shard_{shard_idx:04d}.mask.bin")
+                print(f"\n  Wrote shard {shard_idx}  ({shard_size / 1e6:.1f}M tokens)")
+                tok_buf  = tok_buf[shard_size:]
+                mask_buf = mask_buf[shard_size:]
                 shard_idx += 1
-                shard_path = DATA_DIR / f"{out_prefix}_shard_{shard_idx:04d}.bin"
 
-    if buf:
-        write_shard(buf, shard_path)
-        print(f"\n  Wrote {shard_path}  ({len(buf) / 1e6:.2f}M tokens — final shard)")
+    # Write remaining tokens
+    if tok_buf:
+        tok_path  = DATA_DIR / f"{out_prefix}_shard_{shard_idx:04d}.bin"
+        mask_path = DATA_DIR / f"{out_prefix}_shard_{shard_idx:04d}.mask.bin"
+        write_token_shard(tok_buf,  tok_path)
+        write_mask_shard(mask_buf, mask_path)
+        print(f"\n  Wrote {tok_path}  ({len(tok_buf) / 1e6:.2f}M tokens — final shard)")
 
     print(f"  Total tokens ({out_prefix}): {total / 1e6:.2f}M")
 
+    # Sanity check: count trainable (mask=1) tokens
+    mask_ones = sum(
+        sum(open(DATA_DIR / f"{out_prefix}_shard_{i:04d}.mask.bin", "rb").read())
+        for i in range(shard_idx + 1)
+        if (DATA_DIR / f"{out_prefix}_shard_{i:04d}.mask.bin").exists()
+    )
+    pct = 100.0 * mask_ones / max(total, 1)
+    print(f"  Trainable tokens (mask=1): {mask_ones:,} / {total:,}  ({pct:.1f}%)")
 
-# Human-readable vocab dump
+
+# Vocab dump 
 def save_vocab_txt(tokeniser: Tokenizer) -> None:
-    """Write vocab.txt: one 'token_id  display_repr' line per token."""
     vocab = tokeniser.get_vocab()
     with open(VOCAB_TXT, "w", encoding="utf-8") as f:
         for token, idx in sorted(vocab.items(), key=lambda x: x[1]):
@@ -305,31 +273,18 @@ def save_vocab_txt(tokeniser: Tokenizer) -> None:
 
 # Entry point
 def main(config: Config) -> None:
-    parser = argparse.ArgumentParser(
-        description="Train and/or run Qwen-style BPE tokeniser"
-    )
-    parser.add_argument(
-        "--encode-only",
-        action="store_true",
-        help="Skip training; load existing tokeniser and encode datasets",
-    )
-    args = parser.parse_args()
+    tokeniser = build_tokeniser(config)
+    tokeniser.save(str(TOKENISER_JSON))
+    print(f"\nTokeniser saved to {TOKENISER_JSON}")
+    save_vocab_txt(tokeniser)
 
-    if args.encode_only:
-        print(f"Loading tokeniser from {TOKENISER_JSON} …")
-        tokeniser = Tokenizer.from_file(str(TOKENISER_JSON))
-    else:
-        tokeniser = build_tokeniser(config)
-        tokeniser.save(str(TOKENISER_JSON))
-        print(f"\nTokeniser saved to {TOKENISER_JSON}")
-        save_vocab_txt(tokeniser)
-
-    print("\nEncoding datasets into binary shards …")
+    print("\nEncoding datasets into binary shards + loss-mask shards …")
     for jsonl_path, prefix in ALL_DATASETS:
         encode_dataset(tokeniser, jsonl_path, prefix, config)
 
-    print("\nDone!  Shards are in data/")
-    print("Next step: run  embeddings to build GloVe-initialised weight matrices.")
+    print("\nDone!  Token shards and mask shards are in data/")
+    print("Each .bin shard has a matching .mask.bin file.")
+    print("Next step: run  embeddings then  train")
 
 
 if __name__ == "__main__":

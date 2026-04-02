@@ -1,53 +1,3 @@
-"""
-WHAT THIS FILE DOES
--------------------
-1. Loads tokenised binary shards produced by tokeniser.py
-2. Trains CodingLM (from model.py) with AdamW + cosine LR schedule
-3. Implements early stopping on validation loss
-4. Runs a grid search over learning rate, batch size, and dropout rate
-5. Logs training/validation loss per epoch to CSV files for plotting
-6. Saves the best checkpoint for use in evaluate.py and generate.py
-
-TRAINING CONCEPTS
-----------------------------
-
-TRUNCATED BACK-PROPAGATION THROUGH TIME (TBPTT)
-    An LSTM's forward pass over a 512-token sequence produces a computation
-    graph of depth 512.  Back-propagating through that full graph is:
-      a) Slow — every node in the graph must be materialised in memory
-      b) Numerically fragile — gradients can vanish or explode over 512 steps
-    TBPTT solves this by splitting each sequence into chunks of length
-    `bptt_len` (e.g. 64).  We process chunk by chunk, carrying the hidden
-    state forward but *detaching* it so gradients only flow within a chunk
-    Chunk length is a hyperparameter: shorter = cheaper but less context
-
-AdamW OPTIMISER
-    Loshchilov & Hutter (2019) "Decoupled Weight Decay Regularisation"
-    arXiv:1711.05101.
-    AdamW = Adam (adaptive per-parameter learning rates) + correct L2 weight
-    decay.  Vanilla Adam applies weight decay incorrectly via gradient updates;
-    AdamW applies it directly to the weights, which is more effective and
-    allows larger weight decay values without destabilising training
-
-COSINE LEARNING RATE SCHEDULE
-    After a short linear warmup (prevents large early gradient steps), the
-    learning rate decays following a half-cosine curve from lr_max down to
-    lr_min.  This allows the model to first explore the loss surface with
-    large steps, then settle into a sharp minimum with small steps
-
-GRADIENT CLIPPING
-    If the global gradient norm exceeds `clip_norm`, all gradients are scaled
-    down proportionally.  This prevents the "exploding gradient" problem that
-    can occur in LSTMs on long sequences
-
-CROSS-ENTROPY LOSS
-    The standard loss for language models:
-        L = −(1/T) Σ_t log P(xₜ₊₁ | x₁…xₜ)
-    = average negative log-probability of the next token.
-    Perfect memorisation would give L → 0; a random model gives L ≈ log(V)
-    Perplexity = exp(L): lower is better; a value of 1 is perfect
-"""
-
 import argparse
 import csv
 import json
@@ -68,91 +18,49 @@ from tqdm import tqdm
 sys.path.append(str(Path(__file__).parent))
 
 from model import CodingLM, LMConfig
-
 from src.config import Config
 
-# Paths
+# Paths 
 DATA_DIR = Path("data")
 CKPT_DIR = Path("checkpoints")
-LOG_DIR = Path("logs")
+LOG_DIR  = Path("logs")
 CKPT_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 GLOVE_PT = Path("embeddings") / "glove_aligned.pt"
 
-
-# Training configuration
-# Use the project-wide Config defaults as the source-of-truth for training
-# hyperparameters. This keeps one place (src.config.Config) as the single
-# source of truth while still allowing TrainConfig to be used for CLI/grid
-# overrides and to be passed around within the training code.
+# Training config 
 _config_defaults = Config()
 
 
 @dataclass
 class TrainConfig:
-    """
-    All training hyperparameters.
-
-    Default values are taken from src.config.Config so there's one canonical
-    place for hyperparameter defaults (the Config dataclass). TrainConfig is
-    kept as a small wrapper used by the training scripts and grid search.
-    The grid search still overrides lr, batch_size and dropout_rate as before.
-    """
-
-    # --- Data ---
-    seq_len: int = (
-        _config_defaults.seq_len
-    )  # tokens per training example (context window)
-    bptt_len: int = (
-        _config_defaults.bptt_len
-    )  # TBPTT chunk length (how far back gradients flow)
-
-    # --- Optimisation ---
-    lr: float = _config_defaults.lr  # peak learning rate for AdamW
-    weight_decay: float = _config_defaults.weight_decay  # AdamW weight decay
-    clip_norm: float = _config_defaults.clip_norm  # gradient clipping norm
-    warmup_steps: int = _config_defaults.warmup_steps  # linear LR warmup steps
-
-    # --- Schedule ---
-    epochs: int = _config_defaults.epochs
-    batch_size: int = _config_defaults.batch_size
-
-    # --- Hardware ---
-    device: str = _config_defaults.device  # "auto" picks CUDA > MPS > CPU
-
-    # --- Data split ---
-    val_fraction: float = (
-        _config_defaults.val_fraction
-    )  # fraction of shards reserved for validation
-
-    # --- Logging ---
-    log_every: int = _config_defaults.log_every  # log loss every N batches
-
-    # --- Regularisation / searchable ---
-    # Keep dropout_rate here as it's overridden in the grid search
+    seq_len:      int   = _config_defaults.seq_len
+    bptt_len:     int   = _config_defaults.bptt_len
+    lr:           float = _config_defaults.lr
+    weight_decay: float = _config_defaults.weight_decay
+    clip_norm:    float = _config_defaults.clip_norm
+    warmup_steps: int   = _config_defaults.warmup_steps
+    epochs:       int   = _config_defaults.epochs
+    batch_size:   int   = _config_defaults.batch_size
+    device:       str   = _config_defaults.device
+    val_fraction: float = _config_defaults.val_fraction
+    log_every:    int   = _config_defaults.log_every
     dropout_rate: float = _config_defaults.dropout_rate
-
-    # --- Early stopping (defaults from Config) ---
-    patience: int = _config_defaults.patience
-    min_delta: float = _config_defaults.min_delta
+    patience:     int   = _config_defaults.patience
+    min_delta:    float = _config_defaults.min_delta
 
 
-# Grid search space
 GRID = {
-    "lr": [1e-3, 3e-4, 1e-4],
-    "batch_size": [32, 64],
+    "lr":           [1e-3, 3e-4, 1e-4],
+    "batch_size":   [32, 64],
     "dropout_rate": [0.1, 0.3],
 }
-
-# For a full search, every combination is tried.
-# 3 × 2 × 2 = 12 runs.  Each run trains for `grid_epochs` epochs only to
-# keep the search affordable; the best config is then trained to convergence.
-GRID_EPOCHS = _config_defaults.grid_epochs   # short runs for the search
-FULL_EPOCHS = _config_defaults.full_epochs   # full run with the best config
+GRID_EPOCHS = _config_defaults.grid_epochs
+FULL_EPOCHS = _config_defaults.full_epochs
 
 
-# Device selection
+# Device 
 def get_device(preference: str = "auto") -> torch.device:
     if preference == "auto":
         if torch.cuda.is_available():
@@ -163,149 +71,142 @@ def get_device(preference: str = "auto") -> torch.device:
     return torch.device(preference)
 
 
-# Binary shard DataLoader
-# The shards produced by tokeniser.py are flat arrays of uint16 token IDs.
-# We read them into numpy arrays and slice out [seq_len+1]-length windows.
-# The +1 is because for a context [x₀, x₁, …, x_{T-1}] the target is
-# [x₁, x₂, …, x_T] — each target is the next token.
+# Dataset
 def load_shard(path: Path) -> np.ndarray:
-    """Read a .bin shard into a uint16 numpy array"""
+    """Read a .bin shard into a uint16→int32 numpy array."""
     data = path.read_bytes()
-    n = len(data) // 2
+    n    = len(data) // 2
     return np.frombuffer(data, dtype=np.uint16, count=n).astype(np.int32)
+
+
+def load_mask_shard(path: Path) -> np.ndarray:
+    """
+    Read a .mask.bin shard into a uint8 numpy array.
+    Returns an array of all-ones (train on everything) if the file is missing
+    so the code still works with data that was tokenised without masking.
+    """
+    if not path.exists():
+        # Fall back: treat all tokens as trainable
+        token_path = Path(str(path).replace(".mask.bin", ".bin"))
+        n = len(token_path.read_bytes()) // 2 if token_path.exists() else 0
+        return np.ones(n, dtype=np.uint8)
+    return np.frombuffer(path.read_bytes(), dtype=np.uint8).copy()
 
 
 class ShardDataset(torch.utils.data.Dataset):
     """
-    Dataset that spans multiple binary shard files
+    Dataset spanning multiple binary shard files.
 
-    Each item is a pair (input_ids, target_ids) of length seq_len
-    input_ids[i] = token at position i
-    target_ids[i] = token at position i+1  (the "next token" the model predicts)
+    Each item is a triple (input_ids, target_ids, loss_mask):
+      input_ids  [seq_len]  — token IDs fed to the model
+      target_ids [seq_len]  — next-token labels (shifted by 1)
+      loss_mask  [seq_len]  — 1 = compute loss, 0 = ignore (prompt tokens)
+
+    target_ids positions where loss_mask=0 are set to -1 so that
+    CrossEntropyLoss(ignore_index=-1) skips them.
     """
 
     def __init__(self, shard_paths: List[Path], seq_len: int) -> None:
         self.seq_len = seq_len
-        # Load and concatenate all shards
-        arrays = [load_shard(p) for p in shard_paths]
-        self.data = np.concatenate(arrays)
-        # Number of complete windows we can extract
-        self.n = (len(self.data) - 1) // seq_len
+
+        tok_arrays  = [load_shard(p) for p in shard_paths]
+        mask_arrays = [load_mask_shard(Path(str(p).replace(".bin", ".mask.bin")))
+                       for p in shard_paths]
+
+        self.tokens = np.concatenate(tok_arrays)
+        self.masks  = np.concatenate(mask_arrays)
+
+        # Trim to same length in case of any off-by-one
+        min_len = min(len(self.tokens), len(self.masks))
+        self.tokens = self.tokens[:min_len]
+        self.masks  = self.masks[:min_len]
+
+        self.n = (len(self.tokens) - 1) // seq_len
+
+        # Report how much of the data is trainable
+        pct = 100.0 * self.masks.sum() / max(len(self.masks), 1)
+        print(f"  ShardDataset: {self.n:,} windows, "
+              f"{pct:.1f}% tokens are response (mask=1)")
 
     def __len__(self) -> int:
         return self.n
 
     def __getitem__(self, idx: int):
         start = idx * self.seq_len
-        chunk = self.data[start : start + self.seq_len + 1]
-        x = torch.from_numpy(chunk[:-1].copy()).long()
-        y = torch.from_numpy(chunk[1:].copy()).long()
+        chunk_tok  = self.tokens[start : start + self.seq_len + 1]
+        chunk_mask = self.masks[ start : start + self.seq_len + 1]
+
+        x    = torch.from_numpy(chunk_tok[:-1].copy()).long()
+        y    = torch.from_numpy(chunk_tok[1:].copy()).long()
+        mask = torch.from_numpy(chunk_mask[1:].copy()).long()  # mask aligns with targets
+
+        # Wherever mask=0 set target to -1 so CrossEntropyLoss ignores it
+        y = y.masked_fill(mask == 0, -1)
         return x, y
 
 
 def build_dataloaders(cfg: TrainConfig, device_type: str):
-    """
-    Find all shards, split into train/val, return DataLoaders
-    Handles the case where only one shard is present
-    """
+    """Find all token shards, split into train/val, return DataLoaders."""
     shards = sorted(DATA_DIR.glob("*_shard_*.bin"))
+    # Exclude mask shards from the list
+    shards = [p for p in shards if ".mask." not in p.name]
+
     if not shards:
         raise FileNotFoundError(
-            f"No shard files found in {DATA_DIR}. Run tokeniser.py first"
+            f"No shard files found in {DATA_DIR}. Run tokeniser.py first."
         )
 
     pin = device_type == "cuda"
 
-    #  Multiple Shards
     if len(shards) > 1:
-        n_val = max(1, int(len(shards) * cfg.val_fraction))
+        n_val      = max(1, int(len(shards) * cfg.val_fraction))
         val_shards = shards[:n_val]
-        train_shards = shards[n_val:]
-
-        print(f"  Shards: {len(train_shards)} train, {len(val_shards)} val")
-        train_ds = ShardDataset(train_shards, cfg.seq_len)
-        val_ds = ShardDataset(val_shards, cfg.seq_len)
-
-    # CASE B: Single Shard
+        trn_shards = shards[n_val:]
+        print(f"  Shards: {len(trn_shards)} train, {len(val_shards)} val")
+        train_ds = ShardDataset(trn_shards, cfg.seq_len)
+        val_ds   = ShardDataset(val_shards, cfg.seq_len)
     else:
-        print("  Single shard detected. Splitting data within the shard")
-        full_ds = ShardDataset(shards, cfg.seq_len)
-
-        # Split the single dataset into 95% train / 5% val (or based on val_fraction)
+        print("  Single shard detected — splitting within shard.")
+        full_ds  = ShardDataset(shards, cfg.seq_len)
         val_size = max(1, int(len(full_ds) * cfg.val_fraction))
-        train_size = len(full_ds) - val_size
-
-        train_ds, val_ds = torch.utils.data.random_split(
-            full_ds, [train_size, val_size]
-        )
+        trn_size = len(full_ds) - val_size
+        train_ds, val_ds = torch.utils.data.random_split(full_ds, [trn_size, val_size])
 
     train_loader = torch.utils.data.DataLoader(
-        train_ds,
-        batch_size=cfg.batch_size,
-        shuffle=True,
-        num_workers=2,
-        pin_memory=pin,
-        drop_last=True,
+        train_ds, batch_size=cfg.batch_size, shuffle=True,
+        num_workers=2, pin_memory=pin, drop_last=True,
     )
     val_loader = torch.utils.data.DataLoader(
-        val_ds,
-        batch_size=cfg.batch_size,
-        shuffle=False,
-        num_workers=2,
-        pin_memory=pin,
-        drop_last=True,
+        val_ds, batch_size=cfg.batch_size, shuffle=False,
+        num_workers=2, pin_memory=pin, drop_last=True,
     )
     return train_loader, val_loader
 
 
-# Learning rate schedule: linear warmup + cosine decay
+# LR schedule 
 def make_lr_lambda(warmup_steps: int, total_steps: int, lr_min_ratio: float = 0.1):
-    """
-    Returns a function step → lr_multiplier for LambdaLR
-
-    Phase 1 (steps 0…warmup_steps): linear ramp from 0 → 1
-    Phase 2 (steps warmup_steps…total_steps): cosine decay from 1 → lr_min_ratio
-    """
-
     def lr_lambda(step: int) -> float:
         if step < warmup_steps:
             return float(step) / max(1, warmup_steps)
         progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
-        cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+        cosine   = 0.5 * (1.0 + math.cos(math.pi * progress))
         return lr_min_ratio + (1.0 - lr_min_ratio) * cosine
-
     return lr_lambda
 
 
-# Early stopping
+# Early stopping 
 class EarlyStopping:
-    """
-    Monitors validation loss and signals when training should stop
-
-    Implements the "patience" heuristic: if the validation loss does not
-    improve by at least min_delta for `patience` consecutive epochs, the
-    training loop should stop to prevent overfitting
-
-    Attributes:
-        best_loss   Best validation loss seen so far
-        counter     Epochs without improvement
-        should_stop Flag set to True when patience is exhausted
-    """
-
-    def __init__(self, patience: int = 3, min_delta: float = 1e-4) -> None:
-        self.patience = patience
-        self.min_delta = min_delta
-        self.best_loss = float("inf")
-        self.counter = 0
+    def __init__(self, patience: int = 10, min_delta: float = 1e-4) -> None:
+        self.patience    = patience
+        self.min_delta   = min_delta
+        self.best_loss   = float("inf")
+        self.counter     = 0
         self.should_stop = False
 
     def step(self, val_loss: float) -> bool:
-        """
-        Call once per epoch.  Returns True if training should stop
-        """
         if val_loss < self.best_loss - self.min_delta:
             self.best_loss = val_loss
-            self.counter = 0
+            self.counter   = 0
         else:
             self.counter += 1
             if self.counter >= self.patience:
@@ -313,40 +214,90 @@ class EarlyStopping:
         return self.should_stop
 
 
-# Single training run
+# Checkpoint validation 
+def validate_checkpoint_architecture(model: CodingLM, ckpt: dict, ckpt_path: Path) -> None:
+    model_state = model.state_dict()
+    ckpt_state  = ckpt["model_state"]
+    checks = {
+        "tok_embed.weight":   "Vocabulary / Embedding Size",
+        "lstm.weight_ih_l0":  "Input / Hidden Size",
+        "head.weight":        "Output Vocabulary Size",
+    }
+    mismatches = []
+    for key, name in checks.items():
+        if key in model_state and key in ckpt_state:
+            ms = tuple(model_state[key].shape)
+            cs = tuple(ckpt_state[key].shape)
+            if ms != cs:
+                mismatches.append(f"  - {name} ({key}): current={ms}  checkpoint={cs}")
+
+    if mismatches:
+        print("\n" + "!" * 60)
+        print("ERROR: ARCHITECTURE MISMATCH")
+        print("!" * 60)
+        print(f"Checkpoint '{ckpt_path}' is incompatible with current config.")
+        print("Differences:")
+        print("\n".join(mismatches))
+        print("\nFIX: delete the checkpoint or update your Config to match.")
+        print("!" * 60 + "\n")
+        sys.exit(1)
+
+
+# Validation loop 
+@torch.no_grad()
+def evaluate(
+    model:      CodingLM,
+    loader:     torch.utils.data.DataLoader,
+    criterion:  nn.Module,
+    device:     torch.device,
+    vocab_size: int,
+) -> float:
+    """
+    Compute average cross-entropy loss over the validation set.
+    Uses ignore_index=-1 so masked (prompt) tokens don't affect the metric.
+    """
+    model.eval()
+    total_loss = 0.0
+    n_batches  = 0
+
+    for x, y in tqdm(loader, desc="Validating", leave=False):
+        x, y   = x.to(device), y.to(device)
+        logits, _ = model(x, None)
+        loss    = criterion(logits.reshape(-1, vocab_size), y.reshape(-1))
+        total_loss += loss.item()
+        n_batches  += 1
+
+    model.train()
+    return total_loss / max(n_batches, 1)
+
+
+# Single training run 
 def run_training(
-    cfg: TrainConfig,
-    run_name: str,
+    cfg:        TrainConfig,
+    run_name:   str,
     max_epochs: Optional[int] = None,
-    use_glove: bool = True,
+    use_glove:  bool = True,
 ) -> dict:
     device = get_device(cfg.device)
     print(f"\n{'=' * 60}")
     print(f"Run: {run_name}")
-    print(
-        f"  device={device}  lr={cfg.lr}  batch={cfg.batch_size}  dropout={cfg.dropout_rate}"
-    )
+    print(f"  device={device}  lr={cfg.lr}  batch={cfg.batch_size}  dropout={cfg.dropout_rate}")
     print(f"{'=' * 60}")
 
     epochs = max_epochs if max_epochs is not None else cfg.epochs
 
     # Build model
-    # Use the canonical defaults from src.config.Config (created above as
-    # _config_defaults) for model-level hyperparameters. The TrainConfig
-    # controls training-run-specific values (batch size, lr, dropout overrides).
     model_cfg = LMConfig(
-        vocab_size=_config_defaults.vocab_size,
-        embed_dim=_config_defaults.embed_dim,
-        hidden_dim=_config_defaults.hidden_dim,
-        n_layers=_config_defaults.n_layers,
-        embed_drop=cfg.dropout_rate,  # training-time dropout comes from TrainConfig
-        lstm_drop=cfg.dropout_rate,
-        out_drop=cfg.dropout_rate,
-        tie_weights=_config_defaults.tie_weights,
-        # Keep max_seq_len consistent with global config but ensure model has
-        # a slightly larger positional buffer than the training seq_len
-        max_seq_len=min(_config_defaults.max_seq_len, cfg.seq_len + 64),
-        pad_id=_config_defaults.pad_id,
+        vocab_size  = _config_defaults.vocab_size,
+        embed_dim   = _config_defaults.embed_dim,
+        hidden_dim  = _config_defaults.hidden_dim,
+        n_layers    = _config_defaults.n_layers,
+        embed_drop  = cfg.dropout_rate,
+        lstm_drop   = cfg.dropout_rate,
+        out_drop    = cfg.dropout_rate,
+        tie_weights = _config_defaults.tie_weights,
+        max_seq_len = min(_config_defaults.max_seq_len, cfg.seq_len + 64),
+        pad_id      = _config_defaults.pad_id,
     )
 
     pretrained = None
@@ -360,54 +311,44 @@ def run_training(
     train_loader, val_loader = build_dataloaders(cfg, device.type)
 
     # Optimiser
-    decay_params = [
-        p for n, p in model.named_parameters() if p.requires_grad and p.dim() >= 2
-    ]
-    no_decay_params = [
-        p for n, p in model.named_parameters() if p.requires_grad and p.dim() < 2
-    ]
+    decay_params    = [p for n, p in model.named_parameters() if p.requires_grad and p.dim() >= 2]
+    no_decay_params = [p for n, p in model.named_parameters() if p.requires_grad and p.dim() < 2]
 
     optimiser = torch.optim.AdamW(
         [
-            {"params": decay_params, "weight_decay": cfg.weight_decay},
+            {"params": decay_params,    "weight_decay": cfg.weight_decay},
             {"params": no_decay_params, "weight_decay": 0.0},
         ],
-        lr=cfg.lr,
-        betas=(0.9, 0.95),
-        eps=1e-8,
+        lr=cfg.lr, betas=(0.9, 0.95), eps=1e-8,
     )
 
     total_steps = epochs * len(train_loader)
-    scheduler = LambdaLR(optimiser, make_lr_lambda(cfg.warmup_steps, total_steps))
+    scheduler   = LambdaLR(optimiser, make_lr_lambda(cfg.warmup_steps, total_steps))
 
+    # ignore_index=-1 means masked (prompt) token positions are skipped
     criterion = nn.CrossEntropyLoss(ignore_index=-1)
 
-    # Logging
-    log_path = LOG_DIR / f"{run_name}.csv"
+    # Logging / checkpointing paths
+    log_path  = LOG_DIR  / f"{run_name}.csv"
     ckpt_path = CKPT_DIR / f"{run_name}_best.pt"
 
-    # Resume from checkpoint if available
-    start_epoch = 1
+    # Resume from checkpoint
+    start_epoch   = 1
     best_val_loss = float("inf")
     train_losses, val_losses = [], []
-    
-    if ckpt_path.exists():
-            print(f"  Resuming from {ckpt_path} …")
-            ckpt = torch.load(ckpt_path, map_location=device)
-            
-            validate_checkpoint_architecture(model, ckpt, ckpt_path)
-    
-            model.load_state_dict(ckpt["model_state"])
-            optimiser.load_state_dict(ckpt["optim_state"])
-            
+
     if ckpt_path.exists():
         print(f"  Resuming from {ckpt_path} …")
         ckpt = torch.load(ckpt_path, map_location=device)
+
+        # Validate architecture before loading weights
+        validate_checkpoint_architecture(model, ckpt, ckpt_path)
+
         model.load_state_dict(ckpt["model_state"])
         optimiser.load_state_dict(ckpt["optim_state"])
-        start_epoch = ckpt["epoch"] + 1
+        start_epoch   = ckpt["epoch"] + 1
         best_val_loss = ckpt["val_loss"]
-        print(f"  Resumed at epoch {start_epoch}, best_val_loss={best_val_loss:.4f}")
+        print(f"  Resumed at epoch {start_epoch-1}, best_val_loss={best_val_loss:.4f}")
     else:
         # Fresh run — write CSV header
         with open(log_path, "w", newline="") as f:
@@ -416,21 +357,21 @@ def run_training(
             )
 
     early_stop = EarlyStopping(patience=cfg.patience, min_delta=cfg.min_delta)
-    early_stop.best_loss = best_val_loss  # sync early stopping with resumed state
+    early_stop.best_loss = best_val_loss
 
-    #  Epoch loop 
+    # Epoch loop 
     for epoch in range(start_epoch, epochs + 1):
-        # --- Train ---
         model.train()
         epoch_loss = 0.0
         step_count = 0
-        hidden = None
-        t0 = time.time()
+        hidden     = None
+        t0         = time.time()
 
         for step, (x, y) in enumerate(
             tqdm(train_loader, desc=f"Epoch {epoch}/{epochs}", leave=False)
         ):
             x, y = x.to(device), y.to(device)
+            # y already has -1 at masked positions (set in ShardDataset.__getitem__)
 
             chunk_losses = []
             for t in range(0, x.size(1), cfg.bptt_len):
@@ -443,11 +384,8 @@ def run_training(
                     hidden = CodingLM.detach_hidden(hidden)
 
                 logits, hidden = model(xc, hidden)
+                loss = criterion(logits.reshape(-1, model_cfg.vocab_size), yc.reshape(-1))
 
-                loss = criterion(
-                    logits.reshape(-1, model_cfg.vocab_size),
-                    yc.reshape(-1),
-                )
                 optimiser.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(model.parameters(), cfg.clip_norm)
@@ -455,24 +393,21 @@ def run_training(
                 scheduler.step()
                 chunk_losses.append(loss.item())
 
-            batch_loss = float(np.mean(chunk_losses)) if chunk_losses else 0.0
+            batch_loss  = float(np.mean(chunk_losses)) if chunk_losses else 0.0
             epoch_loss += batch_loss
             step_count += 1
 
             if (step + 1) % cfg.log_every == 0:
                 cur_lr = scheduler.get_last_lr()[0]
-                print(
-                    f"  e{epoch} step {step + 1:5d}  loss={batch_loss:.4f}  lr={cur_lr:.2e}"
-                )
+                print(f"  e{epoch} step {step + 1:5d}  loss={batch_loss:.4f}  lr={cur_lr:.2e}")
 
         avg_train_loss = epoch_loss / max(step_count, 1)
         train_losses.append(avg_train_loss)
 
-        # --- Validate ---
-        val_loss = evaluate(model, val_loader, criterion, device, model_cfg.vocab_size)
+        val_loss   = evaluate(model, val_loader, criterion, device, model_cfg.vocab_size)
         val_losses.append(val_loss)
         perplexity = math.exp(min(val_loss, 20))
-        elapsed = time.time() - t0
+        elapsed    = time.time() - t0
 
         print(
             f"Epoch {epoch:3d}/{epochs}  "
@@ -482,127 +417,47 @@ def run_training(
             f"time={elapsed:.0f}s"
         )
 
-        # Append to log (don't overwrite existing rows)
         with open(log_path, "a", newline="") as f:
-            csv.writer(f).writerow(
-                [
-                    epoch,
-                    step_count,
-                    avg_train_loss,
-                    val_loss,
-                    scheduler.get_last_lr()[0],
-                    perplexity,
-                ]
-            )
+            csv.writer(f).writerow([
+                epoch, step_count, avg_train_loss, val_loss,
+                scheduler.get_last_lr()[0], perplexity,
+            ])
 
         # Save best checkpoint
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(
                 {
-                    "epoch": epoch,
+                    "epoch":       epoch,
                     "model_state": model.state_dict(),
                     "optim_state": optimiser.state_dict(),
-                    "val_loss": val_loss,
-                    "config": asdict(model_cfg),
-                    "train_cfg": asdict(cfg),
-                    "run_name": run_name,
+                    "val_loss":    val_loss,
+                    "config":      asdict(model_cfg),
+                    "train_cfg":   asdict(cfg),
+                    "run_name":    run_name,
                 },
                 ckpt_path,
             )
             print(f"  ✓ Saved best checkpoint (val_loss={val_loss:.4f}) → {ckpt_path}")
 
-        # Early stopping
         if early_stop.step(val_loss):
-            print(
-                f"  Early stopping triggered after {epoch} epochs (patience={cfg.patience})"
-            )
+            print(f"  Early stopping after {epoch} epochs (patience={cfg.patience})")
             break
 
     return {
-        "run_name": run_name,
-        "best_val_loss": best_val_loss,
-        "train_losses": train_losses,
-        "val_losses": val_losses,
-        "epochs_run": len(train_losses),
-        "ckpt_path": str(ckpt_path),
-        "config": asdict(cfg),
+        "run_name":       run_name,
+        "best_val_loss":  best_val_loss,
+        "train_losses":   train_losses,
+        "val_losses":     val_losses,
+        "epochs_run":     len(train_losses),
+        "ckpt_path":      str(ckpt_path),
+        "config":         asdict(cfg),
     }
 
 
-def validate_checkpoint_architecture(model, ckpt, ckpt_path):
-    """
-    Compares the model's expected shapes with the checkpoint's saved shapes.
-    Provides a human-readable error instead of a stack trace.
-    """
-    model_state = model.state_dict()
-    ckpt_state = ckpt["model_state"]
-    
-    # We check the embedding layer and the output head as they are 
-    # the most common points of failure for vocab/dimension changes.
-    layers_to_check = {
-        "tok_embed.weight": "Vocabulary/Embedding Size",
-        "lstm.weight_ih_l0": "Input/Hidden Size",
-        "head.weight": "Output Vocabulary Size"
-    }
-    
-    mismatches = []
-    for key, name in layers_to_check.items():
-        if key in model_state and key in ckpt_state:
-            m_shape = tuple(model_state[key].shape)
-            c_shape = tuple(ckpt_state[key].shape)
-            if m_shape != c_shape:
-                mismatches.append(f"  - {name} ({key}): Current {m_shape} vs Checkpoint {c_shape}")
-
-    if mismatches:
-        print("\n" + "!"*60)
-        print("ERROR: ARCHITECTURE MISMATCH")
-        print("!"*60)
-        print(f"The checkpoint '{ckpt_path}' is incompatible with your current config.")
-        print("\nDifferences detected:")
-        print("\n".join(mismatches))
-        print("\nHOW TO FIX:")
-        print(f"1. Delete or rename the file: {ckpt_path}")
-        print("2. Or change your Config (vocab_size, hidden_dim, etc.) to match the checkpoint.")
-        print("!"*60 + "\n")
-        sys.exit(1)
-
-
-# Validation loop
-@torch.no_grad()
-def evaluate(
-    model: CodingLM,
-    loader: torch.utils.data.DataLoader,
-    criterion: nn.Module,
-    device: torch.device,
-    vocab_size: int,
-) -> float:
-    """Compute average cross-entropy loss over the validation set"""
-    model.eval()
-    total_loss = 0.0
-    n_batches = 0
-    hidden = None
-
-    for x, y in tqdm(loader, desc="Validating", leave=False):
-        x, y = x.to(device), y.to(device)
-        logits, hidden = model(x, None)
-        hidden = CodingLM.detach_hidden(hidden)
-        loss = criterion(logits.reshape(-1, vocab_size), y.reshape(-1))
-        total_loss += loss.item()
-        n_batches += 1
-
-    model.train()
-    return total_loss / max(n_batches, 1)
-
-
-# Grid search (Req 1.2.2)
+# Grid search 
 def run_grid_search(base_cfg: TrainConfig) -> TrainConfig:
-    """
-    Try every combination in GRID, train for GRID_EPOCHS, record val loss
-
-    Returns the best config as a TrainConfig
-    """
-    keys = list(GRID.keys())
+    keys   = list(GRID.keys())
     values = list(GRID.values())
     combos = list(product(*values))
 
@@ -611,7 +466,7 @@ def run_grid_search(base_cfg: TrainConfig) -> TrainConfig:
 
     for combo in combos:
         params = dict(zip(keys, combo))
-        cfg = TrainConfig(
+        cfg    = TrainConfig(
             lr=params["lr"],
             batch_size=params["batch_size"],
             dropout_rate=params["dropout_rate"],
@@ -620,16 +475,12 @@ def run_grid_search(base_cfg: TrainConfig) -> TrainConfig:
             bptt_len=base_cfg.bptt_len,
             device=base_cfg.device,
         )
-        name = (
-            f"grid_lr{params['lr']}_bs{params['batch_size']}_do{params['dropout_rate']}"
-        )
+        name   = f"grid_lr{params['lr']}_bs{params['batch_size']}_do{params['dropout_rate']}"
         result = run_training(cfg, run_name=name, max_epochs=GRID_EPOCHS)
         results.append(result)
 
-    # Sort by best validation loss
     results.sort(key=lambda r: r["best_val_loss"])
 
-    # Save grid search summary
     summary_path = LOG_DIR / "grid_search_results.json"
     with open(summary_path, "w") as f:
         json.dump(results, f, indent=2)
@@ -638,12 +489,9 @@ def run_grid_search(base_cfg: TrainConfig) -> TrainConfig:
     print("\nTop 3 configurations:")
     for r in results[:3]:
         c = r["config"]
-        print(
-            f"  val_loss={r['best_val_loss']:.4f}  "
-            f"lr={c['lr']}  batch={c['batch_size']}  dropout={c['dropout_rate']}"
-        )
+        print(f"  val_loss={r['best_val_loss']:.4f}  lr={c['lr']}  "
+              f"batch={c['batch_size']}  dropout={c['dropout_rate']}")
 
-    # Return best config
     best = results[0]["config"]
     return TrainConfig(
         lr=best["lr"],
@@ -656,56 +504,41 @@ def run_grid_search(base_cfg: TrainConfig) -> TrainConfig:
     )
 
 
-# Entry point
+# Entry point 
 def main(config: Config) -> None:
     parser = argparse.ArgumentParser(description="Train CodingLM")
-    parser.add_argument(
-        "--grid-search",
-        action="store_true",
-        help="Run grid search before final training",
-    )
-    parser.add_argument("--lr", type=float, default=None)
-    parser.add_argument("--batch-size", type=int, default=None)
-    parser.add_argument("--dropout", type=float, default=None)
-    parser.add_argument("--epochs", type=int, default=None)
-    parser.add_argument("--seq-len", type=int, default=None)
-    parser.add_argument("--device", type=str, default=None)
-    parser.add_argument(
-        "--no-glove",
-        action="store_true",
-        help="Train embeddings from scratch instead of loading GloVe",
-    )
+    parser.add_argument("--grid-search", action="store_true")
+    parser.add_argument("--lr",         type=float, default=None)
+    parser.add_argument("--batch-size", type=int,   default=None)
+    parser.add_argument("--dropout",    type=float, default=None)
+    parser.add_argument("--epochs",     type=int,   default=None)
+    parser.add_argument("--seq-len",    type=int,   default=None)
+    parser.add_argument("--device",     type=str,   default=None)
+    parser.add_argument("--no-glove",   action="store_true",
+                        help="Train embeddings from scratch instead of loading GloVe")
     args = parser.parse_args()
 
-    # Use config values, but allow CLI args to override
     base_cfg = TrainConfig(
-        lr=args.lr if args.lr is not None else config.lr,
-        batch_size=args.batch_size
-        if args.batch_size is not None
-        else config.batch_size,
-        dropout_rate=args.dropout if args.dropout is not None else config.dropout_rate,
-        epochs=args.epochs if args.epochs is not None else config.epochs,
-        seq_len=args.seq_len if args.seq_len is not None else config.seq_len,
-        device=args.device if args.device is not None else config.device,
+        lr           = args.lr         if args.lr         is not None else config.lr,
+        batch_size   = args.batch_size if args.batch_size is not None else config.batch_size,
+        dropout_rate = args.dropout    if args.dropout    is not None else config.dropout_rate,
+        epochs       = args.epochs     if args.epochs     is not None else config.epochs,
+        seq_len      = args.seq_len    if args.seq_len    is not None else config.seq_len,
+        device       = args.device     if args.device     is not None else config.device,
     )
 
     if args.grid_search:
-        print("Running grid search to find best hyperparameters …")
+        print("Running grid search …")
         best_cfg = run_grid_search(base_cfg)
-        print(f"Best config found. Running full training for {FULL_EPOCHS} epochs …")
-        result = run_training(
-            best_cfg, run_name="best_model", use_glove=not args.no_glove
-        )
+        print(f"Best config found.  Running full training for {FULL_EPOCHS} epochs …")
+        result = run_training(best_cfg, run_name="best_model", use_glove=not args.no_glove)
     else:
-        result = run_training(
-            base_cfg, run_name="default_run", use_glove=not args.no_glove
-        )
+        result = run_training(base_cfg, run_name="default_run", use_glove=not args.no_glove)
 
     print("Training complete")
     print(f"  Best val loss : {result['best_val_loss']:.4f}")
     print(f"  Perplexity    : {math.exp(min(result['best_val_loss'], 20)):.1f}")
     print(f"  Checkpoint    : {result['ckpt_path']}")
-    print(f"\nNext step: run  py -m src.main evaluate --ckpt {result['ckpt_path']}")
 
 
 if __name__ == "__main__":
