@@ -11,20 +11,20 @@ class Config:
     # If you want a larger model, switch to GloVe-300d and set all three to 300.
     embed_dim: int = 300
     hidden_dim: int = 300         # keep equal to embed_dim for weight tying
-    n_layers: int = 2
+    n_layers: int = 4
     tie_weights: bool = True       # only valid when embed_dim == hidden_dim
     max_seq_len: int = 512
     pad_id: int = 0
 
     # Training Parameters
     seq_len: int = 128             # context window fed to the model each step
-    bptt_len: int = 32             # TBPTT chunk length
-    lr: float = 1e-3              # peak AdamW learning rate
+    bptt_len: int = 128             # TBPTT chunk length
+    lr: float = 3e-4              # peak AdamW learning rate
     weight_decay: float = 0.1
     clip_norm: float = 1.0        # gradient clipping
-    warmup_steps: int = 300       # linear LR warm-up steps
-    epochs: int = 30
-    batch_size: int = 32
+    warmup_steps: int = 1000       # linear LR warm-up steps
+    epochs: int = 60
+    batch_size: int = 64
     val_fraction: float = 0.05    # fraction of shards held out for validation
     log_every: int = 100          # print loss every N batches
 
@@ -40,7 +40,7 @@ class Config:
 
     # Grid Search 
     grid_epochs: int = 3
-    full_epochs: int = 30
+    full_epochs: int = 60
 
     #  Tokeniser 
     tokenizer_vocab_size: int = 8192

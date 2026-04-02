@@ -168,8 +168,8 @@ def decode_ids(tokeniser, ids: torch.Tensor) -> str:
 # Interactive REPL
 REPL_HELP = """
 Commands:
-  /temp  <float>    Set sampling temperature  (default 0.8)
-  /topk  <int>      Set top-k                 (default 40)
+  /temp  <float>    Set sampling temperature  (default 0.2)
+  /topk  <int>      Set top-k                 (default 5)
   /topp  <float>    Set top-p                 (default 0.95)
   /rep   <float>    Set repetition penalty    (default 1.1)
   /len   <int>      Set max new tokens        (default 200)
@@ -182,7 +182,7 @@ def interactive_loop(model, tokeniser, eot_id, device: torch.device) -> None:
     print("\n=== CodingLM Interactive Mode ===")
     print(REPL_HELP)
 
-    params = dict(max_new=200, temperature=0.8, top_k=40, top_p=0.95, rep_penalty=1.1)
+    params = dict(max_new=200, temperature=0.2, top_k=5, top_p=0.95, rep_penalty=1.1)
 
     while True:
         try:
