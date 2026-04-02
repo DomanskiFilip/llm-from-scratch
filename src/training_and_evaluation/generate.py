@@ -175,8 +175,6 @@ Commands:
   /len   <int>      Set max new tokens        (default 200)
   /quit             Exit
   <any other text>  Generate a completion
-
-Tip: start prompts with 'def ' or '# ' to get Python code
 """
 
 
