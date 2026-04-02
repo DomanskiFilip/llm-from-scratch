@@ -88,10 +88,20 @@ DATA_DIR = Path("data")
 MODEL_DIR = Path("tokeniser")
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
-ALPACA_JSONL = DATA_DIR / "alpaca_cleaned.jsonl"
-PYTHON_CODE_JSONL = DATA_DIR / "python_code_instructions.jsonl"
-TOKENISER_JSON = MODEL_DIR / "qwen_style.json"
-VOCAB_TXT = MODEL_DIR / "vocab.txt"
+ALPACA_JSONL        = DATA_DIR / "alpaca_cleaned.jsonl"
+DOLLY_JSONL         = DATA_DIR / "dolly_15k.jsonl"
+OPEN_INSTRUCT_JSONL = DATA_DIR / "open_instruct.jsonl"
+PYTHON_CODE_JSONL   = DATA_DIR / "python_code_instructions.jsonl"
+TOKENISER_JSON      = MODEL_DIR / "qwen_style.json"
+VOCAB_TXT           = MODEL_DIR / "vocab.txt"
+
+# All datasets used for BPE training and encoding, in order
+ALL_DATASETS: list[tuple[Path, str]] = [
+    (ALPACA_JSONL,        "alpaca"),
+    (DOLLY_JSONL,         "dolly"),
+    (OPEN_INSTRUCT_JSONL, "open_instruct"),
+    (PYTHON_CODE_JSONL,   "python_code_instructions"),
+]
 
 
 # Hyperparameters
@@ -153,33 +163,31 @@ def iter_texts(
 
 
 def interleaved_texts(config: Config) -> Generator[str, None, None]:
+    """
+    Yield texts for BPE training from all available datasets, round-robining
+    so every source contributes equally to the vocabulary regardless of size.
+    Missing files are skipped with a warning.
+    """
     sample = config.tokenizer_train_sample_lines
-    """
-    Yield texts for BPE training from all available datasets.
+    available = [(path, name) for path, name in ALL_DATASETS if path.exists()]
+    missing   = [name for path, name in ALL_DATASETS if not path.exists()]
 
-    The code instructions dataset is optional — if python_code_instructions.jsonl is absent, training
-    proceeds on Alpaca alone, producing a conversational-only tokeniser.
-    Both datasets are interleaved when both are present so the vocabulary
-    covers natural language and code equally.
-    """
-    code_available = PYTHON_CODE_JSONL.exists()
+    if missing:
+        print(f"  [INFO] Skipping missing datasets: {missing}")
+    if not available:
+        raise FileNotFoundError("No dataset files found. Run download first.")
 
-    if code_available:
-        alpaca_iter = iter_texts(ALPACA_JSONL, max_lines=sample)
-        code_iter = iter_texts(PYTHON_CODE_JSONL, max_lines=sample)
-        for a, c in zip(alpaca_iter, code_iter):
-            yield a
-            yield c
-        for t in alpaca_iter:
-            yield t
-        for t in code_iter:
-            yield t
-    else:
-        print(
-            "  [INFO] python_code_instructions.jsonl not found — "
-            "training tokeniser on Alpaca only."
-        )
-        yield from iter_texts(ALPACA_JSONL, max_lines=sample)
+    iterators = [iter_texts(path, max_lines=sample) for path, _ in available]
+    names     = [name for _, name in available]
+    print(f"  Interleaving {len(available)} datasets: {names}")
+
+    # Round-robin until all iterators exhausted
+    from itertools import zip_longest
+    sentinel = object()
+    for group in zip_longest(*iterators, fillvalue=sentinel):
+        for text in group:
+            if text is not sentinel:
+                yield text
 
 
 # Tokeniser construction
@@ -317,13 +325,11 @@ def main(config: Config) -> None:
         save_vocab_txt(tokeniser)
 
     print("\nEncoding datasets into binary shards …")
-    encode_dataset(tokeniser, ALPACA_JSONL, "alpaca", config)
-    encode_dataset(
-        tokeniser, PYTHON_CODE_JSONL, "python_code_instructions", config
-    )  # skipped if missing
+    for jsonl_path, prefix in ALL_DATASETS:
+        encode_dataset(tokeniser, jsonl_path, prefix, config)
 
     print("\nDone!  Shards are in data/")
-    print("Next step: run  embeddings.py  to build GloVe-initialised weight matrices.")
+    print("Next step: run  embeddings to build GloVe-initialised weight matrices.")
 
 
 if __name__ == "__main__":

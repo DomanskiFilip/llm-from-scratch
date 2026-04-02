@@ -705,7 +705,7 @@ def main(config: Config) -> None:
     print(f"  Best val loss : {result['best_val_loss']:.4f}")
     print(f"  Perplexity    : {math.exp(min(result['best_val_loss'], 20)):.1f}")
     print(f"  Checkpoint    : {result['ckpt_path']}")
-    print(f"\nNext step: run  evaluate.py --ckpt {result['ckpt_path']}")
+    print(f"\nNext step: run  py -m src.main evaluate --ckpt {result['ckpt_path']}")
 
 
 if __name__ == "__main__":

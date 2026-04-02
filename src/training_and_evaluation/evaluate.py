@@ -197,7 +197,7 @@ def collect_predictions(
         if max_batches and batch_idx >= max_batches:
             break
         x, y = x.to(device), y.to(device)
-        logits, hidden = model(x, hidden)
+        logits, hidden = model(x, None)
         hidden = CodingLM.detach_hidden(hidden)
 
         # [B*T, V]

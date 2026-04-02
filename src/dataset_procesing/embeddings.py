@@ -352,14 +352,6 @@ def main(config: Config) -> None:
         f"\n"
         f"Total GloVe coverage: {covered:>10,} / {total_regular:,}  ({pct:.1f}%)\n"
         f"\n"
-        f"Interpretation\n"
-        f"--------------\n"
-        f"Tokens that got GloVe vectors start training with meaningful\n"
-        f"geometric relationships (synonyms close, antonyms apart).\n"
-        f"Randomly initialised tokens (mostly rare code symbols and\n"
-        f"sub-word fragments) will need the model to learn their\n"
-        f"representations from scratch during pre-training.\n"
-        f"\n"
         f"References\n"
         f"----------\n"
         f"GloVe: Pennington, Socher & Manning (2014) arXiv:1405.0312\n"
@@ -372,21 +364,6 @@ def main(config: Config) -> None:
     with open(COVERAGE_LOG, "w") as f:
         f.write(report)
     print(f"  Report saved → {COVERAGE_LOG}")
-
-    # Quick sanity check
-    print("\nSanity check — nearest GloVe neighbours for 'def' and 'return':")
-    for probe in ["def", "return", "class"]:
-        probe_id = tokeniser.token_to_id("Ġ" + probe)  # Ġ = space prefix
-        if probe_id is None:
-            probe_id = tokeniser.token_to_id(probe)
-        if probe_id is None:
-            continue
-        probe_vec = torch.from_numpy(weight[probe_id])
-        all_vecs = torch.from_numpy(weight[:5000])  # check in first 5k
-        sims = torch.nn.functional.cosine_similarity(probe_vec.unsqueeze(0), all_vecs)
-        top5_ids = sims.topk(6).indices.tolist()
-        words = [tokeniser.id_to_token(i) for i in top5_ids if i != probe_id][:5]
-        print(f"  '{probe}' → {words}")
 
     print("\nDone!  Next step: run  train. Optionally run model.py (standalone).")
 

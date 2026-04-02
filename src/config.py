@@ -11,7 +11,7 @@ class Config:
     # If you want a larger model, switch to GloVe-300d and set all three to 300.
     embed_dim: int = 300
     hidden_dim: int = 300         # keep equal to embed_dim for weight tying
-    n_layers: int = 3
+    n_layers: int = 2
     tie_weights: bool = True       # only valid when embed_dim == hidden_dim
     max_seq_len: int = 512
     pad_id: int = 0

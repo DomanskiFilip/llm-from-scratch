@@ -7,7 +7,7 @@ py -m src.main tokenise
 py -m src.main embeddings
 py -m src.training_and_evaluation.model (optionally and standalone)
 py -m src.main train --grid-search
-py -m src.main evaluate --ckpt checkpoints/best_model_best.pt
+py -m src.main evaluate --ckpt checkpoints/default_run_best.pt
 
 interactive mode:
 py -m src.main generate --ckpt checkpoints/default_run_best.pt
