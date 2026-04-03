@@ -169,7 +169,8 @@ def plot_loss_curves(log_csv_path: Path, out_path: Path) -> None:
     print(f"  Loss curves saved → {out_path}")
 
 
-# 2. Collect predictions
+# Collect predictions
+@torch.no_grad()
 @torch.no_grad()
 def collect_predictions(
     model: CodingLM,
@@ -178,24 +179,17 @@ def collect_predictions(
     vocab_size: int,
     max_batches: int = 200,
 ) -> dict:
-    """
-    Run the model over `max_batches` batches and collect:
-      - all_targets  : flat list of ground-truth token IDs
-      - all_top1     : flat list of top-1 predicted token IDs
-      - all_logprobs : flat list of log-probabilities assigned to the ground truth
-
-    max_batches caps the evaluation to keep it affordable; for a fair final
-    evaluation use max_batches=None (runs over the full validation set).
-    """
     model.eval()
     all_targets, all_top1, all_logprobs = [], [], []
     hidden = None
 
+    # Note: we unpack the batch as (x, y) because ShardDataset returns a tuple
     for batch_idx, (x, y) in enumerate(
         tqdm(loader, desc="Evaluating", total=max_batches)
     ):
         if max_batches and batch_idx >= max_batches:
             break
+            
         x, y = x.to(device), y.to(device)
         logits, hidden = model(x, None)
         hidden = CodingLM.detach_hidden(hidden)
@@ -204,16 +198,27 @@ def collect_predictions(
         logits_flat = logits.reshape(-1, vocab_size)
         targets_flat = y.reshape(-1)
 
-        # Top-1 prediction
-        top1 = logits_flat.argmax(dim=-1)
+        # MASKING LOGIC: 
+        # ShardDataset sets target_ids to -1 for instruction tokens.
+        # We only collect metrics for the response tokens (targets != -1).
+        mask = (targets_flat != -1)
+        
+        if not mask.any():
+            continue
 
-        # Log-probability of the ground-truth token (for perplexity)
-        log_probs = F.log_softmax(logits_flat, dim=-1)
+        masked_logits = logits_flat[mask]
+        masked_targets = targets_flat[mask]
+
+        # Top-1 prediction for accuracy
+        top1 = masked_logits.argmax(dim=-1)
+
+        # Log-probability for perplexity
+        log_probs = F.log_softmax(masked_logits, dim=-1)
         gt_log_probs = log_probs[
-            torch.arange(len(targets_flat), device=device), targets_flat
+            torch.arange(len(masked_targets), device=device), masked_targets
         ]
 
-        all_targets.append(targets_flat.cpu())
+        all_targets.append(masked_targets.cpu())
         all_top1.append(top1.cpu())
         all_logprobs.append(gt_log_probs.cpu())
 
@@ -224,7 +229,7 @@ def collect_predictions(
     }
 
 
-# 3. Compute scalar metrics
+# Compute scalar metrics
 def compute_metrics(preds: dict) -> dict:
     """Compute perplexity, top-1 accuracy, top-5 accuracy (approx from top-1)."""
     targets = preds["targets"]
@@ -245,7 +250,7 @@ def compute_metrics(preds: dict) -> dict:
     }
 
 
-# 4. Confusion matrix (top K tokens)
+# Confusion matrix (top K tokens)
 def plot_confusion_matrix(
     preds: dict,
     token_names: list,
@@ -305,7 +310,7 @@ def plot_confusion_matrix(
     print(f"  Confusion matrix saved → {out_path}")
 
 
-# 5. Precision / Recall / F1 (top K tokens)
+# Precision / Recall / F1 (top K tokens)
 def compute_prf(preds: dict, top_k: int = TOP_K_TOKENS) -> str:
     """
     Compute precision, recall, and F1 for the top_k most frequent tokens.
@@ -346,120 +351,6 @@ Perplexity = exp(average negative log-probability of the correct next token).
 A value of {perplexity:.1f} means the model is as uncertain as if it were
 choosing uniformly among ~{perplexity:.0f} equally likely tokens at each step.
 
-For reference:
-  - Random baseline                : ~32,768  (= vocab size)
-  - Character-level model (English): ~2–3
-  - GPT-2 on WebText               : ~29
-  - A well-trained code model      : ~5–20 depending on data size
-
-STRENGTHS
----------
-1. Byte-level BPE tokenisation (Qwen-style) means the model can represent
-   ANY Unicode character or byte sequence without emitting <unk>.  This is
-   critical for code which is full of unusual symbols (∈, →, λ, emoji in
-   comments, etc.).
-
-2. The LSTM architecture is suitable for generating code completions token
-   by token with constant memory — unlike transformers it does not need to
-   re-attend to the whole context at every step.  This makes it efficient
-   at inference time.
-
-3. GloVe pre-trained embeddings give the model a head start: tokens that
-   share context in natural language (e.g. "function" and "method") are
-   close in embedding space from day one, so the model can exploit this
-   structure immediately rather than learning it from scratch.
-
-4. The training pipeline separates tokenisation (tokeniser.py) from
-   training (train.py), so the tokeniser can be reused or replaced
-   independently of the model.
-
-LIMITATIONS
------------
-1. FIXED CONTEXT WINDOW — limited recall of distant tokens
-   The LSTM carries information via a fixed-size hidden state (512 dims).
-   Information about tokens seen hundreds of steps ago is increasingly
-   compressed.  For long files, the model may forget the function name
-   defined 300 tokens earlier.  Evidence: if you see the model "re-inventing"
-   variable names or ignoring earlier type annotations, this is the cause.
-
-2. SEQUENTIAL COMPUTATION — slow training
-   An LSTM processes tokens one at a time.  Transformers process all tokens
-   in parallel using matrix multiplications, making them 10–100x faster to
-   train on modern GPUs for the same sequence length.
-
-3. NO ATTENTION — poor cross-reference between distant tokens
-   An LSTM cannot directly "look back" at a specific token; it must have
-   compressed that token into its hidden state.  Self-attention (Vaswani
-   et al. 2017) lets every token attend to every other token with an
-   explicit weighted sum, which is far more powerful for tasks like
-   "complete this function given its docstring at the top".
-
-4. UNIDIRECTIONAL — only sees left context
-   This model predicts left-to-right.  It never sees what comes after the
-   current position.  Bidirectional models (BERT, RoBERTa) see both
-   directions and are much better at tasks requiring understanding of the
-   full context (e.g. code classification, bug detection).
-
-5. GLOVE MISMATCH — many sub-word tokens get random initialisation
-   GloVe was trained on word-level tokens; our BPE vocabulary contains many
-   sub-word fragments (e.g. "Ġtok", "enizer") that have no GloVe entry and
-   are initialised randomly.  See embeddings/alignment_coverage.txt for the
-   exact coverage statistics.
-
-AREAS FOR IMPROVEMENT
-----------------------
-
-→ UPGRADE PATH 1: Replace LSTM with a Transformer (nanoGPT style)
-    Vaswani et al. (2017) "Attention Is All You Need", arXiv:1706.03762.
-    Replacing the LSTM layers with multi-head self-attention + FFN blocks
-    would:
-      - Parallelize over the sequence length → ~10x faster training
-      - Give every token direct access to every other token
-      - Scale better with data and model size
-    This is exactly what Karpathy's nanoGPT does.  The tokeniser and data
-    pipeline from this project carry over unchanged.
-
-→ UPGRADE PATH 2: Use BERT-style pre-training for code understanding
-    Devlin et al. (2019) "BERT: Pre-training of Deep Bidirectional
-    Transformers", arXiv:1810.04805.
-    For tasks like bug detection, code classification, or semantic search,
-    a *bidirectional* model that sees the full context is better than a
-    unidirectional LM.  Fine-tune a BERT-style model on masked code tokens
-    for a strong code understanding backbone.
-    See also: CodeBERT (Feng et al. 2020, arXiv:2002.08155).
-
-→ UPGRADE PATH 3: Larger vocabulary (Qwen production size)
-    Increasing vocab_size from 32,768 to 100k–150k tokens (matching Qwen)
-    means longer token merges, shorter average sequence lengths, and less
-    memory pressure.  Requires re-running tokeniser.py with a larger
-    VOCAB_SIZE and a bigger training corpus.
-
-→ UPGRADE PATH 4: Rotary Positional Embeddings (RoPE)
-    Su et al. (2021) "RoFormer: Enhanced Transformer with Rotary Position
-    Embedding", arXiv:2104.09864.  Used by Qwen (Bai et al. 2023 §2.2) and
-    LLaMA.  Encodes relative position rather than absolute, which generalises
-    better to sequence lengths not seen during training.
-
-→ UPGRADE PATH 5: Fill-in-the-Middle (FIM) training objective
-    Bavarian et al. (2022), arXiv:2207.14255.  The FIM special tokens
-    (<|fim_prefix|>, <|fim_suffix|>, <|fim_middle|>) are already in our
-    vocabulary.  Training with FIM allows the model to complete code given
-    both the preceding AND following context — much more useful for a code
-    editor assistant than left-to-right only.
-
-REFERENCES
-----------
-  LSTMs: Hochreiter & Schmidhuber (1997) Neural Computation 9(8):1735–1780
-  Transformers: Vaswani et al. (2017) arXiv:1706.03762
-  BERT: Devlin et al. (2019) arXiv:1810.04805
-  GloVe: Pennington, Socher & Manning (2014) arXiv:1405.0312
-  BPE: Sennrich, Haddow & Birch (2016) arXiv:1508.07909
-  Qwen tokeniser: Bai et al. (2023) arXiv:2309.00071
-  nanoGPT: Karpathy (2022) github.com/karpathy/nanoGPT
-  FIM: Bavarian et al. (2022) arXiv:2207.14255
-  RoPE: Su et al. (2021) arXiv:2104.09864
-  AdamW: Loshchilov & Hutter (2019) arXiv:1711.05101
-  Weight tying: Press & Wolf (2017) arXiv:1608.05859
 """
 
 
@@ -497,7 +388,7 @@ def main(config: Config) -> None:
 
     # Loss curves find the matching log CSV
     run_name = ckpt.get("run_name", "default_run")
-    log_csv = Path("logs") / f"{run_name}.csv"
+    log_csv = Path("artefacts/logs") / f"{run_name}.csv"
     if log_csv.exists():
         plot_loss_curves(log_csv, EVAL_DIR / "loss_curves.png")
     else:
