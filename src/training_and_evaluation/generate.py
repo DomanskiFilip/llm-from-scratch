@@ -52,7 +52,7 @@ from train import get_device
 
 from src.config import Config
 
-TOKENISER_JSON = Path("tokeniser") / "qwen_style.json"
+TOKENISER_JSON = Path("artefacts/tokeniser") / "qwen_style.json"
 
 
 # Load model
@@ -179,50 +179,65 @@ Commands:
 
 
 def interactive_loop(model, tokeniser, eot_id, device: torch.device) -> None:
-    print("\n=== CodingLM Interactive Mode ===")
+    print("\n=== CodingLM Interactive Mode (Auto-Alpaca Format) ===")
     print(REPL_HELP)
 
-    params = dict(max_new=200, temperature=0.2, top_k=5, top_p=0.95, rep_penalty=1.1)
+    # We use stable defaults for instruction following:
+    # temperature 0.1 and top_k 1 (Greedy) are best for small models to avoid "word salad"
+    params = dict(max_new=200, temperature=0.1, top_k=1, top_p=0.95, rep_penalty=1.1)
 
     while True:
         try:
-            prompt = input(">>> ").strip()
+            user_input = input(">>> ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\nBye!")
             break
 
-        if not prompt:
+        if not user_input:
             continue
 
-        if prompt.startswith("/quit"):
+        if user_input.startswith("/quit"):
             break
-        elif prompt.startswith("/temp"):
-            params["temperature"] = float(prompt.split()[1])
+        elif user_input.startswith("/temp"):
+            params["temperature"] = float(user_input.split()[1])
             print(f"  temperature = {params['temperature']}")
-        elif prompt.startswith("/topk"):
-            params["top_k"] = int(prompt.split()[1])
+        elif user_input.startswith("/topk"):
+            params["top_k"] = int(user_input.split()[1])
             print(f"  top_k = {params['top_k']}")
-        elif prompt.startswith("/topp"):
-            params["top_p"] = float(prompt.split()[1])
+        elif user_input.startswith("/topp"):
+            params["top_p"] = float(user_input.split()[1])
             print(f"  top_p = {params['top_p']}")
-        elif prompt.startswith("/rep"):
-            params["rep_penalty"] = float(prompt.split()[1])
+        elif user_input.startswith("/rep"):
+            params["rep_penalty"] = float(user_input.split()[1])
             print(f"  rep_penalty = {params['rep_penalty']}")
-        elif prompt.startswith("/len"):
-            params["max_new"] = int(prompt.split()[1])
+        elif user_input.startswith("/len"):
+            params["max_new"] = int(user_input.split()[1])
             print(f"  max_new = {params['max_new']}")
         else:
-            prompt_ids = encode_prompt(tokeniser, prompt, device)
+            # 1. Automatically wrap user input in the Alpaca template
+            # This is critical so the model recognizes it as an instruction task
+            full_prompt = f"### Instruction:\n{user_input}\n\n### Response:\n"
+            
+            prompt_ids = encode_prompt(tokeniser, full_prompt, device)
             output_ids = generate(model, prompt_ids, **params)
-            # Decode only the newly generated portion
+            
+            # 2. Decode only the newly generated portion (after the prompt)
             new_ids = output_ids[:, prompt_ids.size(1) :]
             completion = decode_ids(tokeniser, new_ids)
-            # Stop at <|endoftext|> if present
-            eot_str = tokeniser.id_to_token(eot_id) or ""
-            if eot_str in completion:
-                completion = completion.split(eot_str)[0]
-            print(completion)
-            print()
+            
+            # 3. Handle stopping: 
+            # Check for the actual <|endoftext|> token string
+            eot_str = tokeniser.id_to_token(eot_id) or "<|endoftext|>"
+            
+            # Also check for "###" because small models often fail to emit EOT 
+            # and instead try to start a new instruction section.
+            stop_sequences = [eot_str, "### Instruction:", "###", "Instruction:"]
+            
+            for stop_seq in stop_sequences:
+                if stop_seq in completion:
+                    completion = completion.split(stop_seq)[0]
+            
+            print(f"\nModel Response:\n{completion.strip()}\n")
 
 
 # Entry point

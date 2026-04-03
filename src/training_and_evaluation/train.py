@@ -21,13 +21,13 @@ from model import CodingLM, LMConfig
 from src.config import Config
 
 # Paths 
-DATA_DIR = Path("data")
-CKPT_DIR = Path("checkpoints")
-LOG_DIR  = Path("logs")
+DATA_DIR = Path("artefacts/data")
+CKPT_DIR = Path("artefacts/checkpoints")
+LOG_DIR  = Path("artefacts/logs")
 CKPT_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-GLOVE_PT = Path("embeddings") / "glove_aligned.pt"
+GLOVE_PT = Path("artefacts/embeddings") / "glove_aligned.pt"
 
 # Training config 
 _config_defaults = Config()

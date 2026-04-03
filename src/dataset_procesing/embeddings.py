@@ -116,9 +116,9 @@ from tqdm import tqdm
 from src.config import Config
 
 # Paths
-DATA_DIR = Path("data")
-MODEL_DIR = Path("tokeniser")
-EMBED_DIR = Path("embeddings")
+DATA_DIR = Path("artefacts/data")
+MODEL_DIR = Path("artefacts/tokeniser")
+EMBED_DIR = Path("artefacts/embeddings")
 EMBED_DIR.mkdir(parents=True, exist_ok=True)
 
 TOKENISER_JSON = MODEL_DIR / "qwen_style.json"

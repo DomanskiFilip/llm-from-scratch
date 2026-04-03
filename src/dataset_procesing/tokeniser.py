@@ -19,8 +19,8 @@ from tqdm import tqdm
 from src.config import Config
 
 # Paths 
-DATA_DIR  = Path("data")
-MODEL_DIR = Path("tokeniser")
+DATA_DIR  = Path("artefacts/data")
+MODEL_DIR = Path("artefacts/tokeniser")
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 ALPACA_JSONL        = DATA_DIR / "alpaca_cleaned.jsonl"

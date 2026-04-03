@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from src.config import Config
 
-OUTPUT_DIR = Path("data")
+OUTPUT_DIR = Path("artefacts/data")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
@@ -189,6 +189,49 @@ def print_stats() -> None:
     log.info("  %-40s  %8d rows  total", "TOTAL", total)
 
 
+# synthetic dataset to train the model to say hello
+def download_hello() -> int:
+    log.info("=== Generating Synthetic 'Hello' Dataset ===")
+    out_path = OUTPUT_DIR / "hello_synthetic.jsonl"
+    out_path.unlink(missing_ok=True)
+    
+    num_examples = 5000
+    buf = []
+    
+    # We create a mix of simple "Hello" instructions
+    variations = [
+        ("Say hello.", "Hello! How can I help you today?"),
+        ("Greet me.", "Greetings! I am an AI assistant."),
+        ("Hello", "Hello! It is nice to meet you."),
+        ("Hi", "Hi there!"),
+    ]
+
+    for i in range(num_examples):
+        # Cycle through variations
+        instruction, output = variations[i % len(variations)]
+        
+        # Use existing alpaca_format to ensure consistency
+        text, rsc = alpaca_format(instruction, "", output)
+        
+        buf.append({
+            "source":               "synthetic-hello",
+            "text":                 text,
+            "instruction":          instruction,
+            "input":                "",
+            "output":               output,
+            "response_start_char":  rsc,
+        })
+        
+        if len(buf) >= 1000:
+            write_jsonl(out_path, buf)
+            buf.clear()
+            
+    if buf:
+        write_jsonl(out_path, buf)
+        
+    log.info("Wrote %d synthetic examples to %s", num_examples, out_path)
+    return num_examples
+
 # Entry point 
 def main(config: Config) -> None:
     log.info("Starting dataset preparation...")
@@ -197,6 +240,7 @@ def main(config: Config) -> None:
     download_alpaca()
     download_dolly()
     download_open_instruct()
+    download_hello()
 
     log.info("Done!")
     print_stats()

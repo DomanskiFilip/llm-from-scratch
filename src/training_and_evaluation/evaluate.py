@@ -72,12 +72,12 @@ from train import get_device
 from src.config import Config
 
 # Paths
-DATA_DIR = Path("data")
-LOG_DIR = Path("logs")
-EVAL_DIR = Path("evaluation")
+DATA_DIR = Path("artefacts/data")
+LOG_DIR = Path("artefacts/logs")
+EVAL_DIR = Path("artefacts/evaluation")
 EVAL_DIR.mkdir(parents=True, exist_ok=True)
 
-TOKENISER_JSON = Path("tokeniser") / "qwen_style.json"
+TOKENISER_JSON = Path("artefacts/tokeniser") / "qwen_style.json"
 
 # How many of the most frequent tokens to include in the confusion matrix
 TOP_K_TOKENS = 50

@@ -68,7 +68,7 @@ class Config:
     random_seed: int = 42
 
     # Download / Data Paths 
-    data_dir: str = "data"
+    data_dir: str = "artefacts/data"
 
     def __post_init__(self):
         # Enforce the constraints that are easy to get wrong
