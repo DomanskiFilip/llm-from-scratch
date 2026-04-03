@@ -26,13 +26,15 @@ MODEL_DIR.mkdir(parents=True, exist_ok=True)
 ALPACA_JSONL        = DATA_DIR / "alpaca_cleaned.jsonl"
 DOLLY_JSONL         = DATA_DIR / "dolly_15k.jsonl"
 OPEN_INSTRUCT_JSONL = DATA_DIR / "open_instruct.jsonl"
+HELLO_SYNTHETIC     = DATA_DIR / "hello_synthetic.jsonl"
 TOKENISER_JSON      = MODEL_DIR / "qwen_style.json"
 VOCAB_TXT           = MODEL_DIR / "vocab.txt"
 
 ALL_DATASETS: list[tuple[Path, str]] = [
     (ALPACA_JSONL,        "alpaca"),
     (DOLLY_JSONL,         "dolly"),
-    (OPEN_INSTRUCT_JSONL, "open_instruct")
+    (OPEN_INSTRUCT_JSONL, "open_instruct"),
+    (HELLO_SYNTHETIC,     "hello_synthetic"),
 ]
 
 # Regex (GPT-4 / Qwen cl100k_base pattern)
