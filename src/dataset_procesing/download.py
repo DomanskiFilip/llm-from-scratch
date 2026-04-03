@@ -174,7 +174,8 @@ def print_stats() -> None:
     files = [
         "alpaca_cleaned.jsonl",
         "dolly_15k.jsonl",
-        "open_instruct.jsonl"
+        "open_instruct.jsonl",
+        "hello_synthetic.jsonl"
     ]
     total = 0
     for fname in files:

@@ -49,11 +49,10 @@ class Config:
     tokenizer_special_tokens: list[str] = field(
         default_factory=lambda: [
             "<|endoftext|>",
-            "<|im_start|>",
-            "<|im_end|>",
-            "<|fim_prefix|>",
-            "<|fim_suffix|>",
-            "<|fim_middle|>",
+            "### Instruction:",
+            "### Input:",
+            "### Response:",
+            "\n\n",
             "<|pad|>",
         ]
     )

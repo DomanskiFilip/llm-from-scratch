@@ -142,33 +142,41 @@ def encode_with_mask(
     config: Config,
 ) -> tuple[list[int], list[int]]:
     """
-    Encode `text` and return (token_ids, loss_mask).
-
-    loss_mask[i] = 1  if token i is inside the response (train on it)
-                 = 0  if token i is part of the prompt template (ignore)
-
-    Strategy: encode the prompt prefix separately to get its token count,
-    then encode the full text.  Everything up to prompt_token_count gets
-    mask=0; the rest (response + EOT) gets mask=1.
-
-    Edge case: if response_start_char is 0 or missing, the whole sequence
-    is treated as trainable (safe fallback for plain-text data).
+    Encodes text and creates a loss mask based on character offsets.
+    
+    Logic:
+    - Tokens starting BEFORE response_start_char get mask=0 (Prompt)
+    - Tokens starting AT or AFTER response_start_char get mask=1 (Response/Train)
+    - The appended EOT token always gets mask=1
     """
     eot_id = tokeniser.token_to_id(config.tokenizer_eot_token)
-
+    
+    # Encode the full text in one go
+    encoding = tokeniser.encode(text)
+    all_ids = encoding.ids
+    offsets = encoding.offsets # List of (char_start, char_end) for each token
+    
+    mask = []
+    
     if response_start_char > 0:
-        prompt_text    = text[:response_start_char]
-        prompt_ids     = tokeniser.encode(prompt_text).ids
-        prompt_len     = len(prompt_ids)
+        for (start, end) in offsets:
+            # If the token starts before the response begins, ignore it (0)
+            # If it starts at or after the response begins, train on it (1)
+            if start < response_start_char:
+                mask.append(0)
+            else:
+                mask.append(1)
     else:
-        prompt_len = 0
+        # Fallback: if no response_start_char, train on everything
+        mask = [1] * len(all_ids)
 
-    all_ids  = tokeniser.encode(text).ids + [eot_id]
-    mask     = [0] * min(prompt_len, len(all_ids)) + \
-               [1] * max(0, len(all_ids) - prompt_len)
+    # Append the EOT token and ensure it is trained on (mask=1)
+    all_ids.append(eot_id)
+    mask.append(1)
 
-    # Safety: lengths must match
-    assert len(all_ids) == len(mask), "Token/mask length mismatch — should never happen"
+    # Safety check
+    assert len(all_ids) == len(mask), f"Length mismatch: {len(all_ids)} ids vs {len(mask)} masks"
+    
     return all_ids, mask
 
 

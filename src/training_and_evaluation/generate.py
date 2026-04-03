@@ -179,12 +179,11 @@ Commands:
 
 
 def interactive_loop(model, tokeniser, eot_id, device: torch.device) -> None:
-    print("\n=== CodingLM Interactive Mode (Auto-Alpaca Format) ===")
+    print("\n=== CodingLM Interactive Mode (Alpaca Format) ===")
     print(REPL_HELP)
 
-    # We use stable defaults for instruction following:
-    # temperature 0.1 and top_k 1 (Greedy) are best for small models to avoid "word salad"
-    params = dict(max_new=200, temperature=0.1, top_k=1, top_p=0.95, rep_penalty=1.1)
+    # Stable defaults for small models to avoid "word salad"
+    params = dict(max_new=256, temperature=0.1, top_k=1, top_p=0.95, rep_penalty=1.1)
 
     while True:
         try:
@@ -214,30 +213,36 @@ def interactive_loop(model, tokeniser, eot_id, device: torch.device) -> None:
             params["max_new"] = int(user_input.split()[1])
             print(f"  max_new = {params['max_new']}")
         else:
-            # 1. Automatically wrap user input in the Alpaca template
-            # This is critical so the model recognizes it as an instruction task
+            # 1. WRAP IN THE ALPACA TEMPLATE
+            # Based on your data, the model expects "### Instruction:\n{input}\n\n### Response:\n"
             full_prompt = f"### Instruction:\n{user_input}\n\n### Response:\n"
             
             prompt_ids = encode_prompt(tokeniser, full_prompt, device)
             output_ids = generate(model, prompt_ids, **params)
             
-            # 2. Decode only the newly generated portion (after the prompt)
+            # 2. Decode only the new portion
             new_ids = output_ids[:, prompt_ids.size(1) :]
             completion = decode_ids(tokeniser, new_ids)
             
-            # 3. Handle stopping: 
-            # Check for the actual <|endoftext|> token string
+            # 3. Handle stopping logic
+            # Your model was trained to end with the <|endoftext|> token (eot_id)
             eot_str = tokeniser.id_to_token(eot_id) or "<|endoftext|>"
             
-            # Also check for "###" because small models often fail to emit EOT 
-            # and instead try to start a new instruction section.
-            stop_sequences = [eot_str, "### Instruction:", "###", "Instruction:"]
+            # Include ALPACA markers as stop sequences. 
+            # This prevents the model from hallucinating a new question after answering.
+            stop_sequences = [
+                eot_str, 
+                "### Instruction:", 
+                "### Input:", 
+                "### Response:", 
+                "Instruction:"
+            ]
             
             for stop_seq in stop_sequences:
                 if stop_seq in completion:
                     completion = completion.split(stop_seq)[0]
             
-            print(f"\nModel Response:\n{completion.strip()}\n")
+            print(f"\nAssistant:\n{completion.strip()}\n")
 
 
 # Entry point
