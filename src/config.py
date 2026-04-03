@@ -4,29 +4,29 @@ from dataclasses import dataclass, field
 @dataclass
 class Config:
     # Model Parameters
-    vocab_size: int = 8192
+    vocab_size: int = 4096
     # embed_dim MUST equal hidden_dim when tie_weights=True.
     # It also MUST equal embedding_dim (GloVe dim) so the pretrained matrix
     # loads without shape errors.  We use 100 to match GloVe-100d.
     # If you want a larger model, switch to GloVe-300d and set all three to 300.
     embed_dim: int = 300
-    hidden_dim: int = 300         # keep equal to embed_dim for weight tying
-    n_layers: int = 8
-    tie_weights: bool = True       # only valid when embed_dim == hidden_dim
-    max_seq_len: int = 512
+    hidden_dim: int = 512         # keep equal to embed_dim for weight tying
+    n_layers: int = 3
+    tie_weights: bool = False       # only valid when embed_dim == hidden_dim
+    max_seq_len: int = 128
     pad_id: int = 0
 
     # Training Parameters
     seq_len: int = 128             # context window fed to the model each step
     bptt_len: int = 128             # TBPTT chunk length
-    lr: float = 3e-4              # peak AdamW learning rate
+    lr: float = 1e-3              # peak AdamW learning rate
     weight_decay: float = 0.1
     clip_norm: float = 1.0        # gradient clipping
-    warmup_steps: int = 1000       # linear LR warm-up steps
-    epochs: int = 60
-    batch_size: int = 64
+    warmup_steps: int = 400       # linear LR warm-up steps
+    epochs: int = 80
+    batch_size: int = 128
     val_fraction: float = 0.05    # fraction of shards held out for validation
-    log_every: int = 100          # print loss every N batches
+    log_every: int = 500          # print loss every N batches
 
     # Regularisation
     dropout_rate: float = 0.05    # applied to embed_drop, lstm_drop, out_drop
@@ -43,7 +43,7 @@ class Config:
     full_epochs: int = 60
 
     #  Tokeniser 
-    tokenizer_vocab_size: int = 8192
+    tokenizer_vocab_size: int = vocab_size
     tokenizer_train_sample_lines: int = 200000
     tokenizer_tokens_per_shard: int = 10000000
     tokenizer_special_tokens: list[str] = field(
@@ -53,6 +53,7 @@ class Config:
             "### Input:",
             "### Response:",
             "\n\n",
+            "\n",
             "<|pad|>",
         ]
     )
