@@ -141,42 +141,25 @@ def encode_with_mask(
     response_start_char: int,
     config: Config,
 ) -> tuple[list[int], list[int]]:
-    """
-    Encodes text and creates a loss mask based on character offsets.
-    
-    Logic:
-    - Tokens starting BEFORE response_start_char get mask=0 (Prompt)
-    - Tokens starting AT or AFTER response_start_char get mask=1 (Response/Train)
-    - The appended EOT token always gets mask=1
-    """
     eot_id = tokeniser.token_to_id(config.tokenizer_eot_token)
     
-    # Encode the full text in one go
+    # Encode the whole string once
     encoding = tokeniser.encode(text)
     all_ids = encoding.ids
-    offsets = encoding.offsets # List of (char_start, char_end) for each token
+    offsets = encoding.offsets # This tracks character positions
     
     mask = []
-    
-    if response_start_char > 0:
-        for (start, end) in offsets:
-            # If the token starts before the response begins, ignore it (0)
-            # If it starts at or after the response begins, train on it (1)
-            if start < response_start_char:
-                mask.append(0)
-            else:
-                mask.append(1)
-    else:
-        # Fallback: if no response_start_char, train on everything
-        mask = [1] * len(all_ids)
+    for (start, end) in offsets:
+        # If the token starts at or after the 'Response' index, set mask to 1
+        if response_start_char > 0 and start >= response_start_char:
+            mask.append(1)
+        else:
+            mask.append(0)
 
-    # Append the EOT token and ensure it is trained on (mask=1)
+    # Always add the EOT token at the end and train the model to predict it
     all_ids.append(eot_id)
     mask.append(1)
 
-    # Safety check
-    assert len(all_ids) == len(mask), f"Length mismatch: {len(all_ids)} ids vs {len(mask)} masks"
-    
     return all_ids, mask
 
 
