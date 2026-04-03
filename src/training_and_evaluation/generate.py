@@ -242,7 +242,7 @@ def interactive_loop(model, tokeniser, eot_id, device: torch.device) -> None:
                 if stop_seq in completion:
                     completion = completion.split(stop_seq)[0]
             
-            print(f"\Model:\n{completion.strip()}\n")
+            print(f"Model:\n{completion.strip()}\n")
 
 
 # Entry point
