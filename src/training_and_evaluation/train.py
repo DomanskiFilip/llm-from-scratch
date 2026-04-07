@@ -1,3 +1,20 @@
+"""
+Manages the model training process, including hyperparameter grid searches and integration with GloVe embeddings.
+
+Flags:
+--grid-search: Runs a short trial of multiple hyperparameter combinations before full training.
+
+--no-glove: Disables pre-trained GloVe initialization; trains embeddings from scratch.
+
+--lr [float]: Overrides the default learning rate.
+
+--batch-size [int]: Overrides the default training batch size.
+
+--epochs [int]: Sets the number of training iterations.
+
+--device [str]: Forces usage of cpu, cuda, or mps.
+"""
+
 import argparse
 import csv
 import json
@@ -50,11 +67,11 @@ class TrainConfig:
     patience:     int   = _config_defaults.patience
     min_delta:    float = _config_defaults.min_delta
 
-
+# Dynamic Grid centered around Config values
 GRID = {
-    "lr":           [1e-3, 3e-4, 1e-4],
-    "batch_size":   [32, 64],
-    "dropout_rate": [0.1, 0.3],
+    "lr":           [_config_defaults.lr * 2, _config_defaults.lr, _config_defaults.lr / 5],
+    "batch_size":   [max(32, _config_defaults.batch_size // 2), _config_defaults.batch_size],
+    "dropout_rate": [_config_defaults.dropout_rate, 0.1, 0.2],
 }
 GRID_EPOCHS = _config_defaults.grid_epochs
 FULL_EPOCHS = _config_defaults.full_epochs

@@ -1,41 +1,18 @@
 """
-WHAT THIS FILE DOES
--------------------
-Loads a trained checkpoint and generates code completions from text prompts
-Supports interactive mode (REPL) and single-shot command-line generation
+Loads a trained checkpoint to generate text completions via a REPL interface or single-shot prompts.
 
-SAMPLING STRATEGIES EXPLAINED
-------------------------------
+Flags:
+--ckpt [path]: Path to the specific model checkpoint file to load.
 
-GREEDY DECODING  (temperature → 0, top_k = 1)
-    Always picks the single most probable next token.  Deterministic but
-    often produces repetitive, "safe" output because the model exploits the
-    same high-confidence patterns every time.
+--prompt "[text]": Single-shot generation; if omitted, starts interactive mode.
 
-TEMPERATURE SAMPLING
-    Divides all logits by a temperature scalar T before applying softmax:
-        P(token) ∝ exp(logit / T)
-    T < 1 (e.g. 0.7): sharpens the distribution → more confident, less varied
-    T = 1.0         : unmodified model probabilities
-    T > 1 (e.g. 1.5): flattens the distribution → more random, creative
+--temperature [float]: Controls randomness (lower is more deterministic).
 
-TOP-K SAMPLING
-    After temperature scaling, retain only the K most probable tokens and
-    redistribute probability mass among them (set the rest to -inf before
-    softmax).  Prevents the model from sampling very unlikely tokens that
-    can derail generation (e.g. a random punctuation character mid-function)
-    K = 40 is a common default (Fan et al. 2018, arXiv:1805.04833)
+--top-k [int]: Limits sampling to the top K most likely tokens.
 
-TOP-P (NUCLEUS) SAMPLING
-    Instead of a fixed K, keep the smallest set of tokens whose cumulative
-    probability ≥ p (e.g. p = 0.9).  Adapts the effective vocabulary size
-    based on the model's confidence: when the model is very confident
-    (one token has prob 0.99), top-p picks just that token; when uncertain
-    it allows more variety.  Holtzman et al. (2020), arXiv:1904.09751
+--top-p [float]: Nucleus sampling; limits tokens to a cumulative probability mass.
 
-REPETITION PENALTY
-    Divides the logit of any token that has already appeared in the context
-    by a penalty factor > 1.  Helps prevent degenerate repetition loops
+--max-new [int]: Maximum number of tokens to generate.
 """
 
 import argparse

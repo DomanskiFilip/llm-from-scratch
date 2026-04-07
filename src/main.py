@@ -1,3 +1,22 @@
+"""
+The central entry point that routes commands to the appropriate sub-module
+
+-m src.main [command] [options]
+
+Commands:
+download: Runs dataset fetching and cleaning
+
+tokenise: Trains the BPE tokenizer and encodes data into binary shards
+
+embeddings: Aligns pre-trained vectors to the vocabulary
+
+train: Launches the training loop
+
+evaluate: Runs the evaluation suite
+
+generate: Starts the text generation interface
+"""
+
 import argparse
 import sys
 

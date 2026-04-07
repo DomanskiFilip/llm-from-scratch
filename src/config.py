@@ -4,27 +4,27 @@ from dataclasses import dataclass, field
 @dataclass
 class Config:
     # Model Parameters
-    vocab_size: int = 4096
+    vocab_size: int = 8000
     # embed_dim MUST equal hidden_dim when tie_weights=True.
     # It also MUST equal embedding_dim (GloVe dim) so the pretrained matrix
     # loads without shape errors.  We use 100 to match GloVe-100d.
     # If you want a larger model, switch to GloVe-300d and set all three to 300.
-    embed_dim: int = 300
-    hidden_dim: int = 512         # keep equal to embed_dim for weight tying
-    n_layers: int = 3
-    tie_weights: bool = False       # only valid when embed_dim == hidden_dim
-    max_seq_len: int = 128
+    embed_dim: int = 768
+    hidden_dim: int = 768        # keep equal to embed_dim for weight tying
+    n_layers: int = 4
+    tie_weights: bool = True       # only valid when embed_dim == hidden_dim
+    max_seq_len: int = 1024
     pad_id: int = 0
 
     # Training Parameters
-    seq_len: int = 128             # context window fed to the model each step
-    bptt_len: int = 128             # TBPTT chunk length
-    lr: float = 1e-3              # peak AdamW learning rate
+    seq_len: int = 1024             # context window fed to the model each step
+    bptt_len: int = 1024             # TBPTT chunk length
+    lr: float = 5e-4              # peak AdamW learning rate
     weight_decay: float = 0.1
     clip_norm: float = 1.0        # gradient clipping
-    warmup_steps: int = 400       # linear LR warm-up steps
+    warmup_steps: int = 1000       # linear LR warm-up steps
     epochs: int = 80
-    batch_size: int = 128
+    batch_size: int = 300
     val_fraction: float = 0.05    # fraction of shards held out for validation
     log_every: int = 500          # print loss every N batches
 
@@ -52,6 +52,10 @@ class Config:
             "### Instruction:",
             "### Input:",
             "### Response:",
+            "<|thought|>",
+            "Question:",
+            "Answer:",
+            "---",
             "\n\n",
             "\n",
             "<|pad|>",
@@ -63,7 +67,7 @@ class Config:
     # embedding_dim MUST match embed_dim above
     # GloVe-100d → embedding_dim = 100
     # GloVe-300d → embedding_dim = 300  (change embed_dim/hidden_dim too)
-    embedding_dim: int = 300
+    embedding_dim: int = embed_dim
     embedding_glove_url: str = "https://nlp.stanford.edu/data/glove.6B.zip"
     random_seed: int = 42
 

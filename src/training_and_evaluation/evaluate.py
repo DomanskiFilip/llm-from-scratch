@@ -1,50 +1,12 @@
 """
-WHAT THIS FILE DOES
--------------------
-1. Loads a trained checkpoint from train.py
-2. Computes:
-     - Per-epoch loss curves (train + validation)  →  PNG plot
-     - Perplexity (the standard LM metric)
-     - Token-level accuracy (top-1 and top-5)
-     - Confusion matrix on the most frequent 50 tokens  →  PNG plot
-     - Precision, recall, F1 for those tokens
-3. Writes a human-readable Insights report covering:
-     - Model strengths
-     - Model limitations
-     - Recommended improvements (BERT / transformer path)
-     
-METRICS EXPLAINED
------------------
+Loads a checkpoint to calculate performance metrics like Perplexity and Accuracy, generating a visual and text-based report.
 
-PERPLEXITY
-    PPL = exp(L)  where L = average cross-entropy loss over the test set.
-    Intuitively: if PPL = 100, the model is as uncertain as if it were
-    choosing uniformly among 100 equally likely next tokens.
-    Lower is better.  A char-level model on English might achieve PPL ≈ 2-3;
-    a word-level model on Penn Treebank ≈ 60-80; our BPE code model at the
-    start of training ≈ exp(log(32768)) ≈ 32,768 (random baseline)
+Flags:
+--ckpt [path]: Path to the model checkpoint for evaluation.
 
-TOKEN ACCURACY
-    Top-1: fraction of positions where the most probable token equals the
-    ground-truth next token.  This is a strict metric — the model must
-    rank the correct token first.
-    Top-5: fraction where the correct token is among the top 5 predictions.
-    Useful for seeing whether the model is "almost right" even when top-1 fails
+--batches [int]: Limits the number of validation batches processed (default is all).
 
-CONFUSION MATRIX
-    For language models, a full V×V confusion matrix (32,768 × 32,768) is
-    not practical.  We restrict to the K most frequent tokens in the
-    evaluation set (K=50 by default) and show an K×K matrix where entry
-    (i,j) counts how often token i was the ground truth and token j was
-    the model's top prediction.  A good model has a diagonal matrix
-
-PRECISION / RECALL / F1 (per-token)
-    Treating each token as a binary classification problem (was token t
-    predicted or not?):
-    Precision_t = TP_t / (TP_t + FP_t)  — when we predict t, are we right?
-    Recall_t    = TP_t / (TP_t + FN_t)  — of all ground-truth t's, how many
-                                           did we catch?
-    F1_t        = 2 × P × R / (P + R)   — harmonic mean
+--device [str]: Specifies hardware for evaluation (e.g., cuda or cpu).
 """
 
 import sys

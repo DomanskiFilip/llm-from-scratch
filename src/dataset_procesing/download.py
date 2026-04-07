@@ -166,29 +166,7 @@ def download_open_instruct() -> int:
 
     log.info("Wrote %d examples to %s", kept, out_path)
     return kept
-
-
-# Summary
-def print_stats() -> None:
-    log.info("=== Dataset Summary ===")
-    files = [
-        "alpaca_cleaned.jsonl",
-        "dolly_15k.jsonl",
-        "open_instruct.jsonl",
-        "hello_synthetic.jsonl"
-    ]
-    total = 0
-    for fname in files:
-        path = OUTPUT_DIR / fname
-        if not path.exists():
-            log.info("  %-40s  (not found)", fname)
-            continue
-        n       = sum(1 for _ in open(path, encoding="utf-8"))
-        size_mb = path.stat().st_size / 1e6
-        log.info("  %-40s  %8d rows  %6.1f MB", fname, n, size_mb)
-        total += n
-    log.info("  %-40s  %8d rows  total", "TOTAL", total)
-
+    
 
 # synthetic dataset to train the model to say hello
 def download_hello() -> int:
@@ -232,6 +210,82 @@ def download_hello() -> int:
         
     log.info("Wrote %d synthetic examples to %s", num_examples, out_path)
     return num_examples
+    
+    
+# Dataset 4 — WikiText-103 (Restructured for Instructions)
+def download_wikitext() -> int:
+    log.info("=== WikiText-103 (Restructured) ===")
+    out_path = OUTPUT_DIR / "wikitext_103.jsonl"
+    out_path.unlink(missing_ok=True)
+
+    # Use streaming=True to handle the large size (500MB+) efficiently
+    ds = load_dataset("wikitext", "wikitext-103-v1", split="train", streaming=True)
+    
+    buf = []
+    kept = 0
+    current_title = "Wikipedia Article"
+
+    for row in tqdm(ds, desc="wikitext"):
+        line = row["text"].strip()
+        if not line:
+            continue
+            
+        # WikiText titles are formatted as: = Title =
+        if line.startswith("=") and line.endswith("="):
+            current_title = line.replace("=", "").strip()
+            continue
+
+        # Each paragraph becomes a response explaining the current title
+        instruction = f"Tell me about {current_title}"
+        response = truncate_to_sentences(line, MAX_RESPONSE_CHARS)
+        
+        if len(response) < 20: # Skip very short fragments
+            continue
+
+        text, rsc = alpaca_format(instruction, "", response)
+        buf.append({
+            "source":               "wikitext-103",
+            "text":                 text,
+            "instruction":          instruction,
+            "input":                "",
+            "output":               response,
+            "response_start_char":  rsc,
+        })
+        kept += 1
+
+        if len(buf) >= 5000:
+            write_jsonl(out_path, buf)
+            buf.clear()
+            
+    if buf:
+        write_jsonl(out_path, buf)
+
+    log.info("Wrote %d WikiText examples to %s", kept, out_path)
+    return kept
+
+
+# Summary
+def print_stats() -> None:
+    log.info("=== Dataset Summary ===")
+    files = [
+        "alpaca_cleaned.jsonl",
+        "dolly_15k.jsonl",
+        "open_instruct.jsonl",
+        "hello_synthetic.jsonl",
+        "wikitext_103.jsonl",
+    ]
+    total = 0
+    for fname in files:
+        path = OUTPUT_DIR / fname
+        if not path.exists():
+            log.info("  %-40s  (not found)", fname)
+            continue
+        n       = sum(1 for _ in open(path, encoding="utf-8"))
+        size_mb = path.stat().st_size / 1e6
+        log.info("  %-40s  %8d rows  %6.1f MB", fname, n, size_mb)
+        total += n
+    log.info("  %-40s  %8d rows  total", "TOTAL", total)
+
 
 # Entry point 
 def main(config: Config) -> None:
@@ -242,6 +296,7 @@ def main(config: Config) -> None:
     download_dolly()
     download_open_instruct()
     download_hello()
+    download_wikitext()
 
     log.info("Done!")
     print_stats()

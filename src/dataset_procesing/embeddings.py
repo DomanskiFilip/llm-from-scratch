@@ -1,105 +1,5 @@
 """
-WHAT THIS FILE DOES
--------------------
-1. Downloads GloVe-100d vectors (trained by Pennington et al., Stanford)
-2. Optionally downloads Word2Vec Google News vectors as an alternative
-3. Aligns either embedding set to our BPE vocabulary from tokeniser.py
-4. Saves a weight matrix (float32, shape [VOCAB_SIZE, EMBED_DIM]) that can
-   be plugged directly into nn.Embedding as a pretrained initialisation
-
-WHY USE PRE-TRAINED EMBEDDINGS AT ALL?
----------------------------------------
-Training embeddings from scratch requires the model to see each token in
-many different contexts before its vector becomes meaningful.  With a small
-dataset or limited compute, the embedding layer may never converge well.
-
-Pre-trained embeddings give the model a "head start": the vectors already
-encode syntactic and semantic similarity (e.g. cosine(king, queen) ≈ high)
-
-GLOVE vs WORD2VEC — QUICK COMPARISON
---------------------------------------
-Both produce dense floating-point vectors of fixed dimension (100, 300 …)
-where geometrically close vectors represent semantically similar words.
-They differ in *how* they learn those vectors:
-
-  GloVe (Global Vectors for Word Representation)
-  -----------------------------------------------
-  Pennington, Socher & Manning (2014)
-  https://nlp.stanford.edu/projects/glove/
-
-  GloVe builds a word–word co-occurrence *matrix* X from the entire corpus
-  first, then factorises it.  The loss for a pair (i, j) is:
-
-      L = Σ_{i,j} f(X_ij) (wᵢᵀw̃ⱼ + bᵢ + b̃ⱼ − log X_ij)²
-
-  where f is a weighting function that down-weights very frequent pairs
-  (so "the cat" doesn't dominate).  Optimising this loss forces the dot
-  product of two word vectors to approximate the log of their co-occurrence
-  count.  This global view of statistics is GloVe's key advantage — it
-  sees every pair at once rather than a local context window.
-
-  Word2Vec
-  --------
-  Mikolov et al. (2013)
-  https://code.google.com/archive/p/word2vec/
-
-  Word2Vec uses one of two prediction objectives:
-
-    CBOW (Continuous Bag of Words):
-      Given the surrounding context words, predict the centre word.
-      Faster to train; slightly worse on analogies.
-
-    Skip-gram with Negative Sampling (SGNS):
-      Given the centre word, predict each context word.
-      Slower; generally better semantic structure, especially for rare words.
-
-  The skip-gram loss for a centre word w and context word c is:
-
-      L = −log σ(vₜᵀvₛ) − Σₖ E[log σ(−vₙₖᵀvₛ)]
-
-  where the second term is the "negative sampling" component that pushes
-  randomly drawn non-context words away from the centre vector.
-
-  WHY WE USE GloVe BY DEFAULT
-  ----------------------------
-  The Stanford GloVe-100d file (glove.6B.100d.txt) is 347 MB compared to
-  ~1.6 GB for the full Google News Word2Vec binary.  Both encode common
-  English words well; GloVe tends to be better for syntactic tasks while
-  Word2Vec skip-gram is often better for semantic analogies.  Since our
-  model handles code and instruction text (not pure NLP), GloVe-100d is a
-  good starting point that doesn't chew up disk space.
-
-BPE ALIGNMENT CHALLENGE
-------------------------
-GloVe and Word2Vec are trained on *word-level* vocabularies.  Our BPE
-tokeniser produces *sub-word* tokens like "Ġdef", "ĠTokenizer", "▁for".
-(The Ġ/▁ prefix is the ByteLevel encoding of a space.)
-
-Most BPE tokens don't directly appear in GloVe.  We handle the mismatch
-with the following priority chain:
-
-  Priority 1 — Exact match after stripping the space prefix:
-      The token "Ġreturn" → strip "Ġ" → look up "return" in GloVe. ✓
-
-  Priority 2 — Lower-case match:
-      "ĠReturn" → strip → "return" → lowercase → "return". ✓
-
-  Priority 3 — Sub-word average:
-      "Ġfunctionality" not in GloVe.  Split by the BPE regex into
-      ["function", "ality"] (or whatever sub-parts exist in GloVe) and
-      average their vectors.
-
-  Priority 4 — Character n-gram average:
-      For very rare tokens, break into overlapping character trigrams and
-      average any GloVe entries for those trigrams.  (GloVe does not have
-      character n-grams natively; we fall back on whatever sub-strings match.)
-
-  Priority 5 — Random initialisation:
-      Sample from N(0, σ) where σ = std of the GloVe vectors, so
-      uninitialised tokens don't stand out statistically.
-
-The final weight matrix has shape [VOCAB_SIZE, EMBED_DIM].  It is saved as
-a .npy file and also as a PyTorch .pt tensor for direct use in nn.Embedding
+Downloads pre-trained GloVe or Word2Vec vectors and aligns them to your specific BPE vocabulary.
 """
 
 import re
@@ -157,8 +57,6 @@ def extract_glove(zip_path: Path, txt_path: Path) -> None:
 
 
 # Load GloVe vectors into a dict
-
-
 def load_glove(txt_path: Path) -> Dict[str, np.ndarray]:
     """
     Parse GloVe text file into a {word: vector} dictionary.
@@ -352,12 +250,6 @@ def main(config: Config) -> None:
         f"\n"
         f"Total GloVe coverage: {covered:>10,} / {total_regular:,}  ({pct:.1f}%)\n"
         f"\n"
-        f"References\n"
-        f"----------\n"
-        f"GloVe: Pennington, Socher & Manning (2014) arXiv:1405.0312\n"
-        f"Word2Vec: Mikolov et al. (2013) arXiv:1301.3781\n"
-        f"BPE: Sennrich, Haddow & Birch (2016) arXiv:1508.07909\n"
-        f"Qwen tokeniser: Bai et al. (2023) arXiv:2309.00071 §2.1\n"
     )
 
     print("\n" + report)
