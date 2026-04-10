@@ -208,7 +208,7 @@ nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 If the global gradient norm exceeds 1.0, all gradients are scaled down proportionally. LSTMs are particularly susceptible to exploding gradients on long sequences; this cap prevents training instability.
 
 ---
-# All of above mentioned (3.1 -3.3) steps and processes were added dureing the project development and together with hyperparameter optimisation allowed to go from 1 hour lasting epochs to even couple of minutes or seconds lasting epochs with even better PPL(perplexity which was chosen as a main comparison metric) than innitially trained models . the final best "Pery" model was trainied in just 23 epochs in 2 hours acheaving 40ppl and best conversations compared to previously trained models that trained for even 8-9 hours.
+### All of above mentioned (3.1 - 3.3) steps and processes were added dureing the project development and together with hyperparameter optimisation allowed to go from 1 hour lasting epochs to even couple of minutes or seconds lasting epochs with even better PPL(perplexity which was chosen as a main comparison metric) than innitially trained models . the final best "Pery" model was trainied in just 23 epochs in 2 hours acheaving 40ppl and best conversations compared to previously trained models that trained for even 8-9 hours.
 ---
 
 ---
@@ -283,8 +283,6 @@ All metrics are computed exclusively over response tokens (`mask=1`). Instructio
 
 ---
 
-## 6. Results
-
 Training converged over 23 epochs before early stopping (patience=20). Both train and validation loss fell together throughout with no divergence — no overfitting observed.
 
 ```
@@ -294,10 +292,71 @@ Epoch 10:  train=4.24  val=4.18  ppl=65
 Epoch 15:  train=3.95  val=3.94  ppl=51
 Epoch 23:  train=3.73  val=3.74  ppl=42
 ```
+<img width="1784" height="667" alt="loss_curves" src="https://github.com/user-attachments/assets/305fd967-7a01-4821-9b1c-089afbdfdb40" />
+<img width="1984" height="1781" alt="confusion_matrix" src="https://github.com/user-attachments/assets/48708a6e-25ed-46cb-be6a-38c80b28a82c" />
+
+              precision    recall  f1-score   support
+
+           4      0.835     0.367     0.510     87269
+           5      0.665     0.731     0.696     77904
+          20      0.523     0.632     0.573     67801
+         227      0.500     0.342     0.406     60393
+         305      0.584     0.431     0.496     55427
+         283      0.496     0.246     0.329     53113
+          89      0.393     0.167     0.235     52844
+         296      0.363     0.287     0.321     48598
+           0      0.454     0.816     0.584     46179
+         273      0.441     0.442     0.441     45146
+         263      0.689     0.588     0.634     40706
+         308      0.540     0.436     0.483     37081
+         280      0.544     0.229     0.322     33921
+         278      0.612     0.501     0.551     33842
+         266      0.722     0.227     0.345     31133
+         334      0.526     0.461     0.492     31016
+          75      0.611     0.314     0.415     31013
+          19      0.671     0.300     0.415     30956
+         269      0.516     0.329     0.402     30491
+          73      0.496     0.211     0.296     29670
+         275      0.671     0.381     0.486     29616
+          95      0.730     0.262     0.385     29260
+         268      0.597     0.436     0.504     28831
+          72      0.479     0.217     0.299     28657
+         336      0.581     0.386     0.463     28596
+         281      0.779     0.356     0.489     27532
+         415      0.491     0.202     0.286     26601
+         291      0.671     0.574     0.618     26515
+         267      0.801     0.324     0.462     26364
+          90      0.674     0.468     0.553     25782
+          74      0.713     0.234     0.352     25593
+         285      0.786     0.382     0.514     25389
+         326      0.555     0.241     0.337     24059
+         274      0.857     0.320     0.466     23447
+         324      0.629     0.461     0.532     22786
+         353      0.528     0.071     0.125     22681
+         297      0.796     0.525     0.633     22356
+          83      0.577     0.166     0.258     22221
+          76      0.417     0.134     0.202     21910
+         379      0.607     0.352     0.446     21660
+          82      0.718     0.283     0.406     21613
+           8      0.655     0.524     0.583     21551
+         461      0.378     0.224     0.281     20782
+         369      0.709     0.588     0.643     20652
+         441      0.705     0.231     0.348     19677
+          57      0.627     0.217     0.322     19634
+          88      0.647     0.254     0.365     19624
+         272      0.789     0.440     0.565     19594
+         306      0.585     0.415     0.486     19571
+          86      0.564     0.206     0.302     19483
+
+   micro avg      0.585     0.383     0.463   1636540
+   
+   macro avg      0.610     0.359     0.433   1636540
+   
+weighted avg      0.601     0.383     0.447   1636540
 
 ---
 
-## 7. Project Structure
+## 6. Project Structure
 
 ```
 .
