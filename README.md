@@ -208,9 +208,7 @@ nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 If the global gradient norm exceeds 1.0, all gradients are scaled down proportionally. LSTMs are particularly susceptible to exploding gradients on long sequences; this cap prevents training instability.
 
 ---
-### All of above mentioned (3.1 - 3.3) steps and processes were added dureing the project development and together with hyperparameter optimisation allowed to go from 1 hour lasting epochs to even couple of minutes or seconds lasting epochs with even better PPL(perplexity which was chosen as a main comparison metric) than innitially trained models . the final best "Pery" model was trainied in just 23 epochs in 2 hours acheaving 40ppl and best conversations compared to previously trained models that trained for even 8-9 hours.
----
-
+> All above mentioned (3.1 - 3.3) steps and processes were added dureing the project development and together with hyperparameter optimisation allowed to go from 1 hour lasting epochs to even couple of minutes or seconds lasting epochs with even better PPL(perplexity which was chosen as a main comparison metric) than innitially trained models . the final best "Pery" model was trainied in just 23 epochs in 2 hours acheaving 40ppl and best conversations compared to previously trained models that trained for even 8-9 hours.
 ---
 
 ### 3.4 Grid Search (this needs to be triggered with ```--grid-search``` flag dureing training process)
