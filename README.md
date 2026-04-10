@@ -231,6 +231,8 @@ Validation loss is computed after every epoch on a held-out 5% of shards. If it 
 
 The best checkpoint (lowest validation loss ever seen) is saved separately from the most recent epoch — the best weights are never overwritten. On resumption, `validate_checkpoint_architecture()` checks three key weight shapes before loading to catch config mismatches that would otherwise cause silent incorrect behaviour.
 
+This also allows you to stop training and restart it from where you finished at any moment it will restart from last saved best checkpoint allowing for flexibility and nice ux for the user of the project!
+
 ---
 
 ## 4. Datasets
