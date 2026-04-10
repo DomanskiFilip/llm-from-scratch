@@ -1,6 +1,9 @@
 # LSTM Language Model From Scratch
 
- A conversational language model built entirely from scratch in PyTorch. No pretrained weights (with exception of optional glove). No transformer. 
+![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Machine Learning](https://img.shields.io/badge/Machine%20Learning-FF6F00?style=for-the-badge&logo=tensorflow&logoColor=white)
+
+A conversational language model built entirely from scratch in PyTorch. No pretrained weights (with exception of optional glove). No transformer. 
 
 ## 1. Project Overview
 
