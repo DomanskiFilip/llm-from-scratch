@@ -4,13 +4,13 @@ from dataclasses import dataclass, field
 @dataclass
 class Config:
     # Model Parameters
-    vocab_size: int = 8000
+    vocab_size: int = 4096
     # embed_dim MUST equal hidden_dim when tie_weights=True.
     # It also MUST equal embedding_dim (GloVe dim) so the pretrained matrix
     # loads without shape errors.  We use 100 to match GloVe-100d.
     # If you want a larger model, switch to GloVe-300d and set all three to 300.
-    embed_dim: int = 768
-    hidden_dim: int = 768        # keep equal to embed_dim for weight tying
+    embed_dim: int = 600
+    hidden_dim: int = 600        # keep equal to embed_dim for weight tying
     n_layers: int = 4
     tie_weights: bool = True       # only valid when embed_dim == hidden_dim
     max_seq_len: int = 1024
@@ -23,13 +23,13 @@ class Config:
     weight_decay: float = 0.1
     clip_norm: float = 1.0        # gradient clipping
     warmup_steps: int = 1000       # linear LR warm-up steps
-    epochs: int = 80
-    batch_size: int = 300
+    epochs: int = 60
+    batch_size: int = 64
     val_fraction: float = 0.05    # fraction of shards held out for validation
     log_every: int = 500          # print loss every N batches
 
     # Regularisation
-    dropout_rate: float = 0.05    # applied to embed_drop, lstm_drop, out_drop
+    dropout_rate: float = 0.1    # applied to embed_drop, lstm_drop, out_drop
 
     # Hardware
     device: str = "auto"          # "auto" → CUDA > MPS > CPU

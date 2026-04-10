@@ -151,7 +151,7 @@ def collect_predictions(
     ):
         if max_batches and batch_idx >= max_batches:
             break
-            
+
         x, y = x.to(device), y.to(device)
         logits, hidden = model(x, None)
         hidden = CodingLM.detach_hidden(hidden)
@@ -160,11 +160,11 @@ def collect_predictions(
         logits_flat = logits.reshape(-1, vocab_size)
         targets_flat = y.reshape(-1)
 
-        # MASKING LOGIC: 
+        # MASKING LOGIC:
         # ShardDataset sets target_ids to -1 for instruction tokens.
         # We only collect metrics for the response tokens (targets != -1).
         mask = (targets_flat != -1)
-        
+
         if not mask.any():
             continue
 

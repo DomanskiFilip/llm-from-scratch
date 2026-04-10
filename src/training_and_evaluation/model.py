@@ -1,7 +1,7 @@
 """
 WHAT THIS FILE DOES
 -------------------
-Defines the PyTorch neural network used for the coding LLM.
+Defines the PyTorch neural network used for the LLM.
 The architecture is a multi-layer LSTM with:
   - An embedding layer (optionally initialised from GloVe via embeddings.py)
   - Stacked LSTM recurrent layers
@@ -90,9 +90,9 @@ class PositionalEmbedding(nn.Module):
         return self.embed(positions)  # broadcast over batch
 
 
-class CodingLM(nn.Module):
+class LM(nn.Module):
     """
-    Multi-layer LSTM Language Model for code and instruction text.
+    Multi-layer LSTM Language Model for instruction text.
 
     Causal LM: at each position t predicts token at t+1 using only tokens 0..t.
     """
@@ -118,7 +118,7 @@ class CodingLM(nn.Module):
                 f"got {tuple(pretrained_embeddings.shape)}"
             )
             self.tok_embed.weight.data.copy_(pretrained_embeddings)
-            print("[CodingLM] Loaded pre-trained embeddings.")
+            print("[LM] Loaded pre-trained embeddings.")
 
         # Positional embedding
         self.pos_embed = PositionalEmbedding(config.max_seq_len, config.embed_dim)
@@ -150,7 +150,7 @@ class CodingLM(nn.Module):
         elif config.tie_weights:
             # Warn but continue
             print(
-                f"[CodingLM] Warning: tie_weights=True but embed_dim ({config.embed_dim}) "
+                f"[LM] Warning: tie_weights=True but embed_dim ({config.embed_dim}) "
                 f"!= hidden_dim ({config.hidden_dim}). Skipping weight tying."
             )
 
@@ -295,7 +295,7 @@ class CodingLM(nn.Module):
     def __repr__(self) -> str:
         cfg = self.config
         lines = [
-            "CodingLM",
+            "LM",
             f"  vocab_size  : {cfg.vocab_size:,}",
             f"  embed_dim   : {cfg.embed_dim}",
             f"  hidden_dim  : {cfg.hidden_dim}",
@@ -315,7 +315,7 @@ if __name__ == "__main__":
     # Use defaults from the dataclass (which in turn used src.config.Config)
     cfg = LMConfig()
 
-    model = CodingLM(cfg)
+    model = LM(cfg)
     print(model)
     print()
 
